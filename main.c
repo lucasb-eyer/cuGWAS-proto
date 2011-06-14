@@ -47,14 +47,14 @@ void write_test_matrices(problem_args *args) {
   printf("creating test matrices\n");
   out = (double*)malloc(len_x*sizeof(double));
   for( i = 0; i < len_x; i++) {
-    out[i] = rand()*100;
+    out[i] = i;
   }
   write_double(out, "x.in", args->p*args->n, args->m, 0);
   free(out);
 
   out = (double*)malloc(len_y*sizeof(double));
   for( i = 0; i < len_y; i++) {
-    out[i] = rand()*100;
+    out[i] = i;
   }
   write_double(out, "y.in", args->n, args->t, 0);
   free(out);
@@ -84,6 +84,7 @@ void read_x(int index, const problem_args* args) {
   read_double(x_next, "x.in", args->p*args->n,
               MIN(args->x_b, args->m - args->x_b*index),
               index);
+
 }
 
 void read_y(int index, const problem_args* args) {
@@ -94,8 +95,14 @@ void read_y(int index, const problem_args* args) {
 }
 
 void write_b(int s, int r, const problem_args* args) {
+  int z, y_inc, x_inc;
+  y_inc =  MIN(args->y_b, args->t - args->y_b*r);
+  x_inc = MIN(args->x_b, args->m - args->x_b*s);
   printf("write:\n\tb[%d](x=%d)(y=%d)\n", return_buffer_index(b, 2, b_prev), s, r);  
-  sleep(1);
+  for( z = r; z < args->t; z += y_inc) {
+    write_double(b_prev, "b.out", args->p, 
+		 x_inc, s);
+  }
 }
 
 void* io(void* in) {
@@ -113,6 +120,7 @@ void* io(void* in) {
   swap_buffers(&x_cur, &x_next);
   read_x(0, args);
   read_y(0, args);
+  print_buffer(x_next, 16);
   sem_post(&sem_comp);
 
   for (r = 0; r < i; r++) {
@@ -130,6 +138,31 @@ void* io(void* in) {
   pthread_exit(NULL);
 }
 
+#define ITEM(arr, x, x_s, y, y_s, z) arr[y_s*x + y + x_s*y_s*z]
+// compute a (dot) b = c 
+//    a - args.p(h) x args.n(k) x args.x_b(i)
+//    b - args.n(k) x 1 x args.y_b(j)
+//    c - args.p(h) x args.x_b(i) x args.y_b(j)
+void computation( double* a, double* b, double* c, problem_args* args) {
+  int i, j, h, k;
+  double sum;
+  print_buffer( a, 16);
+  for(j = 0; j < args->y_b; j++) {
+    for(i = 0; i < args->x_b; i++) {
+      for(h = 0; h < args->p; h++) {
+	sum = 0;
+	for(k = 0; k < args->n; k++) {
+	  printf("a(%d, %d) = %f\n", h, k, ITEM(a, h, args->p, k, args->n, i));
+	  printf("b(%d) = %f\n", k, ITEM(b, k, args->n, 0, 1, j));
+	  sum += ITEM(a, h, args->p, k, args->n, i) *
+	    ITEM(b, k, args->n, 0, 1, j);
+	}
+	printf("final (%d) = %f\n", h, sum);
+	ITEM(c, h, args->p, i, args->x_b, j) = sum;
+      }
+    }
+  }
+}
 void* compute(void* in) {
   problem_args* args = (problem_args*)in;
   int s,r;
@@ -144,6 +177,7 @@ void* compute(void* in) {
       y_compute = y_cur;
       b_compute = b_cur;
       sem_post(&sem_io);
+      computation(x_compute, y_compute, b_compute, args);
       printf("compute:\n\tx[%d](x=%d)\n\ty[%d](y=%d)\n\tb[%d]\n", 
 	     return_buffer_index(x,2,x_compute), s,
 	     return_buffer_index(y,2,y_compute), r,
@@ -154,14 +188,22 @@ void* compute(void* in) {
   pthread_exit(NULL);
 
 }
+
+void print_output(problem_args *args) {
+  double *buf;
+  buf = (double*) malloc(args->p*args->m*args->t*sizeof(double));
+  read_double( buf, "b.out", args->p*args->m*args->t, 1, 0);
+  printf("printing output:\n");
+  print_buffer( buf, args->p*args->m*args->t);
+}
 int main() {
   int rc;
 
   pthread_t io_thread;
   pthread_t compute_thread;
 
-  in.m = 5;
-  in.t = 5;
+  in.m = 1;
+  in.t = 1;
 
   in.x_b = 1;
   in.y_b = 1;
@@ -169,7 +211,7 @@ int main() {
   in.p = 4;
   in.m_indexed = (int) ((double) in.m/in.x_b);
   in.t_indexed = (int) ((double) in.t/in.y_b);
-
+  
   write_test_matrices(&in);
   
   x_cur =  (double*)malloc(in.p * in.x_b * sizeof(double));
@@ -178,11 +220,11 @@ int main() {
   y_next = (double*)malloc(in.n * in.y_b * sizeof(double));
   b_prev = (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
   b_cur =  (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
-
-  x[1] = x_cur;
-  x[0] = x_next;
-  y[1] = y_cur;
-  y[0] = y_next;
+  
+  x[0] = x_cur;
+  x[1] = x_next;
+  y[0] = y_cur;
+  y[1] = y_next;
   b[0] = b_prev;
   b[1] = b_cur;
 
@@ -200,7 +242,13 @@ int main() {
     pthread_exit(NULL);
   }
 
+  void* retval;
+
+  pthread_join(io_thread, &retval);
+  pthread_join(compute_thread, &retval);
+
+  print_output(&in);
+
   pthread_exit(NULL);
-  
   return 0;
 }
