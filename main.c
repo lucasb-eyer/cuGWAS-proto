@@ -11,6 +11,10 @@
 // but works for now
 #define MIN(x,y) (x < y ? x : y)
 
+FILE* x_file;
+FILE* y_file;
+FILE* b_file;
+
 double* x[2];
 double* y[2];
 double* b[2];
@@ -41,22 +45,26 @@ problem_args in;
 
 void write_test_matrices(problem_args *args) {
   double* out;
-  int i;
+  int i, j;
   int len_x = args->p*args->n*args->m;
   int len_y = args->n*args->t;
   printf("creating test matrices\n");
   out = (double*)malloc(len_x*sizeof(double));
-  for( i = 0; i < len_x; i++) {
-    out[i] = i;
+  for (j = 0; j < args->m; j++) {
+    for (i = 0; i < args->p*args->n; i++) {
+      out[i + args->p*args->n*j] = j;
+    }
   }
-  write_double(out, "x.in", args->p*args->n, args->m, 0);
+  write_double(out, x_file, args->p*args->n, args->m, 0);
   free(out);
 
   out = (double*)malloc(len_y*sizeof(double));
-  for( i = 0; i < len_y; i++) {
-    out[i] = i;
+  for (j = 0; j < args->t; j++) {
+    for (i = 0; i < args->n; i++) {
+      out[i + j*args->n] = j;
+    }
   }
-  write_double(out, "y.in", args->n, args->t, 0);
+  write_double(out, y_file, args->n, args->t, 0);
   free(out);
 }
 
@@ -80,26 +88,26 @@ void swap_buffers(double** b1, double** b2) {
 
 void read_x(int index, const problem_args* args) {
   printf("read_x:\n\tx[%d](x=%d)\n", return_buffer_index(x, 2, x_next), index);  
-  read_double(x_next, "x.in", args->p*args->n,
+  read_double(x_next, x_file, args->p*args->n,
               MIN(args->x_b, args->m - args->x_b*index),
               index);
 }
 
 void read_y(int index, const problem_args* args) {
   printf("read_y:\n\ty[%d](y=%d)\n", return_buffer_index(y, 2, y_next), index);  
-  read_double(y_next, "y.in", args->n, 
+  read_double(y_next, y_file, args->n, 
               MIN(args->y_b, args->t - args->y_b*index), 
               index);
 }
 
 void write_b(int s, int r, const problem_args* args) {
-  int z, y_inc, x_inc;
-  y_inc =  MIN(args->y_b, args->t - args->y_b*r);
+  int j, y_inc, x_inc;
+  y_inc = MIN(args->y_b, args->t - args->y_b*r);
   x_inc = MIN(args->x_b, args->m - args->x_b*s);
-  printf("write:\n\tb[%d](x=%d)(y=%d)\n", return_buffer_index(b, 2, b_prev), s, r);  
-  for( z = r; z < args->t; z += y_inc) {
-    write_double(b_prev, "b.out", args->p, 
-		 x_inc, s);
+  printf("write:\n\tb[%d](x=%d)(y=%d)\n", return_buffer_index(b, 2, b_prev), s, r); 
+  for (j = r; j < r+y_inc;j++){
+    write_double(b_prev, b_file, args->p, 
+		 x_inc, s+j*args->p*x_inc);
   }
 }
 
@@ -143,8 +151,6 @@ void* io(void* in) {
 void computation( double* a, double* b, double* c, problem_args* args) {
   int i, j, h, k;
   double sum;
-  printf("inside computation:\n");
-  print_buffer( a, 16);
   for(j = 0; j < args->y_b; j++) {
     for(i = 0; i < args->x_b; i++) {
       for(h = 0; h < args->p; h++) {
@@ -186,24 +192,57 @@ void* compute(void* in) {
 
 void print_output(problem_args *args) {
   double *buf;
+  int i, j;
   buf = (double*) malloc(args->p*args->m*args->t*sizeof(double));
-  read_double( buf, "b.out", args->p*args->m*args->t, 1, 0);
+  read_double( buf, b_file, args->p*args->m*args->t, 1, 0);
   printf("printing output:\n");
-  print_buffer( buf, args->p*args->m*args->t);
-}
-int main() {
+  for(j =0; j < args->t; j++) {
+    for(i = 0; i < args->m; i++) {
+      printf("b(%d, %d):\n",i,j);
+      print_buffer( & ITEM(buf, args->p, i, args->m, j, args->t), args->p);
+    }
+  }
+	}
+int main(int argc, char* argv[]) {
   int rc;
   int i;
   pthread_t io_thread;
   pthread_t compute_thread;
 
-  in.m = 1;
-  in.t = 1;
+  if (argc != 4) {
+    printf("usage: %s <x-in-file> <y-in-file> <b-out-file>\n", argv[0]);
+    exit(-1);
+  }
+  x_file = fopen(argv[1], "w+b");
+  if(!x_file) {
+    printf("error opening x_file(%s)! exiting...\n", argv[1]);
+    exit(-1);
+  }
+  y_file = fopen(argv[2], "w+b");
+  if(!y_file) {
+    printf("error opening y_file(%s)! exiting...\n", argv[2]);
+    exit(-1);
+  }
+  b_file = fopen(argv[1], "w+b");
+  if(!b_file) {
+    printf("error opening b_file(%s)! exiting...\n", argv[3]);
+    exit(-1);
+  }
 
-  in.x_b = 1;
-  in.y_b = 1;
-  in.n = 4;
-  in.p = 4;
+  printf("Please enter parameters\n");
+  printf("\tm: ");
+  scanf("%d", &in.m);
+  printf("\tt: ");
+  scanf("%d", &in.t);
+  printf("\tm blocksize: ");
+  scanf("%d", &in.x_b);
+  printf("\tt blocksize: ");
+  scanf("%d", &in.y_b);
+  printf("\tn: ");
+  scanf("%d", &in.n);
+  printf("\tp: ");
+  scanf("%d", &in.p);
+
   in.m_indexed = (int) ((double) in.m/in.x_b);
   in.t_indexed = (int) ((double) in.t/in.y_b);
   
@@ -222,25 +261,16 @@ int main() {
   y[1] = y_next;
   b[0] = b_prev;
   b[1] = b_cur;
-  printf("0x%x\n", sizeof(double)*in.p*in.x_b);
-  for(i = 0; i < 2; i++) {
-    printf("x[%d] = 0x%x\n", i, x[i]);
-  }
-  for(i = 0; i < 2; i++) {
-    printf("y[%d] = 0x%x\n", i, y[i]);
-  }
-  for(i = 0; i < 2; i++) {
-    printf("b[%d] = 0x%x\n", i, b[i]);
-  }
+
   sem_init(&sem_io, 0, 0);
   sem_init(&sem_comp, 0, 0);
 
-  rc = pthread_create( &io_thread, NULL, io, (void*)&in);
+  rc = pthread_create(&io_thread, NULL, io, (void*)&in);
   if (rc){
     printf("error: return code from pthread_create() is %d\n", rc);
     pthread_exit(NULL);
   }
-  rc = pthread_create( &compute_thread, NULL, compute, (void*)&in);
+  rc = pthread_create(&compute_thread, NULL, compute, (void*)&in);
   if (rc){
     printf("error: return code from pthread_create() is %d\n", rc);
     pthread_exit(NULL);
@@ -251,7 +281,16 @@ int main() {
   pthread_join(io_thread, &retval);
   pthread_join(compute_thread, &retval);
 
+  fflush(b_file);
+
   print_output(&in);
+
+  free(x_cur);
+  free(x_next);
+  free(y_cur);
+  free(y_next);
+  free(b_prev);
+  free(b_cur);
 
   pthread_exit(NULL);
   return 0;
