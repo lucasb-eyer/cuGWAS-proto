@@ -76,7 +76,6 @@ void swap_buffers(double** b1, double** b2) {
   temp = *b1;
   *b1 = *b2;
   *b2 = temp;
-  temp = 0;
 }
 
 void read_x(int index, const problem_args* args) {
@@ -84,7 +83,6 @@ void read_x(int index, const problem_args* args) {
   read_double(x_next, "x.in", args->p*args->n,
               MIN(args->x_b, args->m - args->x_b*index),
               index);
-
 }
 
 void read_y(int index, const problem_args* args) {
@@ -120,7 +118,6 @@ void* io(void* in) {
   swap_buffers(&x_cur, &x_next);
   read_x(0, args);
   read_y(0, args);
-  print_buffer(x_next, 16);
   sem_post(&sem_comp);
 
   for (r = 0; r < i; r++) {
@@ -146,18 +143,16 @@ void* io(void* in) {
 void computation( double* a, double* b, double* c, problem_args* args) {
   int i, j, h, k;
   double sum;
+  printf("inside computation:\n");
   print_buffer( a, 16);
   for(j = 0; j < args->y_b; j++) {
     for(i = 0; i < args->x_b; i++) {
       for(h = 0; h < args->p; h++) {
 	sum = 0;
 	for(k = 0; k < args->n; k++) {
-	  printf("a(%d, %d) = %f\n", h, k, ITEM(a, h, args->p, k, args->n, i));
-	  printf("b(%d) = %f\n", k, ITEM(b, k, args->n, 0, 1, j));
 	  sum += ITEM(a, h, args->p, k, args->n, i) *
 	    ITEM(b, k, args->n, 0, 1, j);
 	}
-	printf("final (%d) = %f\n", h, sum);
 	ITEM(c, h, args->p, i, args->x_b, j) = sum;
       }
     }
@@ -198,7 +193,7 @@ void print_output(problem_args *args) {
 }
 int main() {
   int rc;
-
+  int i;
   pthread_t io_thread;
   pthread_t compute_thread;
 
@@ -214,8 +209,8 @@ int main() {
   
   write_test_matrices(&in);
   
-  x_cur =  (double*)malloc(in.p * in.x_b * sizeof(double));
-  x_next = (double*)malloc(in.p * in.x_b * sizeof(double));
+  x_cur =  (double*)malloc(in.p * in.n * in.x_b * sizeof(double));
+  x_next = (double*)malloc(in.p * in.n * in.x_b * sizeof(double));
   y_cur =  (double*)malloc(in.n * in.y_b * sizeof(double));
   y_next = (double*)malloc(in.n * in.y_b * sizeof(double));
   b_prev = (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
@@ -227,7 +222,16 @@ int main() {
   y[1] = y_next;
   b[0] = b_prev;
   b[1] = b_cur;
-
+  printf("0x%x\n", sizeof(double)*in.p*in.x_b);
+  for(i = 0; i < 2; i++) {
+    printf("x[%d] = 0x%x\n", i, x[i]);
+  }
+  for(i = 0; i < 2; i++) {
+    printf("y[%d] = 0x%x\n", i, y[i]);
+  }
+  for(i = 0; i < 2; i++) {
+    printf("b[%d] = 0x%x\n", i, b[i]);
+  }
   sem_init(&sem_io, 0, 0);
   sem_init(&sem_comp, 0, 0);
 

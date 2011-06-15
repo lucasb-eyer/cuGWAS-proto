@@ -30,7 +30,7 @@ int read_general(void* buffer, char* filename, int size, int start) {
   fseek(fp, start*sizeof(double), SEEK_SET);
   //just write bytes
   size_t out = fread(buffer, sizeof(double), size, fp);
-
+  printf("read %x bytes into %x\n", size, buffer);
   if(out != size) {
     printf("error: actual read size != proposed read size");
   }
