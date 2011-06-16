@@ -9,7 +9,7 @@ int write_general(void* buffer, FILE* fp, int size, int start) {
   //just write bytes
   size_t out = fwrite(buffer, sizeof(double), size, fp);
   printf("writing:\n");
-  print_buffer(&buffer[start], size);
+  print_buffer(buffer, size);
   if(out != size) {
     printf("error: actual write size != proposed write size");
   }

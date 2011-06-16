@@ -1,3 +1,5 @@
+#define DEBUG
+
 #include "io.h"
 
 #include <stdio.h>
@@ -19,12 +21,7 @@ double* x[2];
 double* y[2];
 double* b[2];
 
-double *x_cur;
-double *x_next;
-double *y_cur;
-double *y_next;
-double *b_prev;
-double *b_cur;
+
 double *x_compute, *y_compute, *b_compute;
 
 sem_t sem_io;
@@ -52,7 +49,7 @@ void write_test_matrices(problem_args *args) {
   out = (double*)malloc(len_x*sizeof(double));
   for (j = 0; j < args->m; j++) {
     for (i = 0; i < args->p*args->n; i++) {
-      out[i + args->p*args->n*j] = j;
+      out[i + args->p*args->n*j] = j+1;
     }
   }
   write_double(out, x_file, args->p*args->n, args->m, 0);
@@ -61,7 +58,7 @@ void write_test_matrices(problem_args *args) {
   out = (double*)malloc(len_y*sizeof(double));
   for (j = 0; j < args->t; j++) {
     for (i = 0; i < args->n; i++) {
-      out[i + j*args->n] = j;
+      out[i + j*args->n] = j+1;
     }
   }
   write_double(out, y_file, args->n, args->t, 0);
@@ -70,7 +67,6 @@ void write_test_matrices(problem_args *args) {
 
 int return_buffer_index(double** buffers, int size, double* cur) {
   int i;
-
   for(i = 0; i < size; i++) {
     if (buffers[i] == cur) {
       return i;
@@ -86,64 +82,68 @@ void swap_buffers(double** b1, double** b2) {
   *b2 = temp;
 }
 
-void read_x(int index, const problem_args* args) {
-  printf("read_x:\n\tx[%d](x=%d)\n", return_buffer_index(x, 2, x_next), index);  
-  read_double(x_next, x_file, args->p*args->n,
+void read_x(double* buf, int index, const problem_args* args) {
+#ifdef DEBUG
+  printf("read_x:\n\tx[%d](x=%d)\n", return_buffer_index(x, 2, buf), index);  
+#endif
+  read_double(buf, x_file, args->p*args->n,
               MIN(args->x_b, args->m - args->x_b*index),
               index);
 }
 
-void read_y(int index, const problem_args* args) {
-  printf("read_y:\n\ty[%d](y=%d)\n", return_buffer_index(y, 2, y_next), index);  
-  read_double(y_next, y_file, args->n, 
+void read_y(double* buf, int index, const problem_args* args) {
+#ifdef DEBUG
+  printf("read_y:\n\ty[%d](y=%d)\n", return_buffer_index(y, 2, buf), index);  
+#endif
+  read_double(buf, y_file, args->n, 
               MIN(args->y_b, args->t - args->y_b*index), 
               index);
 }
 
-void write_b(int s, int r, const problem_args* args) {
+void write_b(double* buf, int s, int r, const problem_args* args) {
   int j, y_inc, x_inc;
   y_inc = MIN(args->y_b, args->t - args->y_b*r);
   x_inc = MIN(args->x_b, args->m - args->x_b*s);
-  printf("write:\n\tb[%d](x=%d)(y=%d)\n", return_buffer_index(b, 2, b_prev), s, r); 
-  for (j = r; j < r+y_inc;j++){
-    write_double(b_prev, b_file, args->p, 
-		 x_inc, s+j*args->p*x_inc);
-  }
+#ifdef DEBUG
+  printf("write:\n\tb[%d](x=%d)(y=%d)\n", return_buffer_index(b, 2, buf), s, r); 
+  printf("\tstarting at %d\n", s*x_inc*args->p+r*args->p*args->m);
+#endif
+  write_double(buf, b_file, args->p, 
+	       x_inc, s*x_inc*args->p+r*args->p*args->m);
 }
 
 void* io(void* in) {
+  double *x_cur = x[0];
+  double *x_next = x[1];
+  double *y_cur = y[0];
+  double *y_next = y[1];
+  double *b_prev = b[0];
+  double *b_cur = b[1];
   problem_args* args = (problem_args*)in;
   int s, r;
   int i = args->t_indexed;
   int j = args->m_indexed;
 
-  // weird starting condition
-  // for now, read into both buffers
-  // need to fix in the future
-  read_x(0, args);
-  read_y(0, args);
-  swap_buffers(&y_cur, &y_next);
-  swap_buffers(&x_cur, &x_next);
-  read_x(0, args);
-  read_y(0, args);
+  read_x(x_cur, 0, args);
+  read_y(y_cur, 0, args);
   sem_post(&sem_comp);
 
   for (r = 0; r < i; r++) {
     swap_buffers(&y_cur, &y_next);
-    read_y((r+1) % i, args);
+    read_y(y_cur, (r+1) % i, args);
     for (s = 0; s < j; s++) {
       swap_buffers(&x_cur, &x_next);
-      read_x((s+1) % j, args);
+      read_x(x_cur, (s+1) % j, args);
       sem_post(&sem_comp);
       sem_wait(&sem_io);
       swap_buffers(&b_prev, &b_cur);
-      write_b(s, r, args);
+      write_b(b_prev, s, r, args);
     }
   }
   pthread_exit(NULL);
 }
 
-#define ITEM(arr, x, x_s, y, y_s, z) arr[y_s*x + y + x_s*y_s*z]
+#define ITEM(arr, x, x_s, y, y_s, z) arr[x + x_s*y + x_s*y_s*z]
 // compute a (dot) b = c 
 //    a - args.p(h) x args.n(k) x args.x_b(i)
 //    b - args.n(k) x 1 x args.y_b(j)
@@ -167,6 +167,12 @@ void computation( double* a, double* b, double* c, problem_args* args) {
 void* compute(void* in) {
   problem_args* args = (problem_args*)in;
   int s,r;
+  double *x_cur = x[0];
+  double *x_next = x[1];
+  double *y_cur = y[0];
+  double *y_next = y[1];
+  double *b_prev = b[0];
+  double *b_cur = b[1];
 
   int i = args->t_indexed;
   int j = args->m_indexed;
@@ -174,17 +180,24 @@ void* compute(void* in) {
   for (r = 0; r < i; r++) {
     for (s = 0; s < j; s ++) {
       sem_wait(&sem_comp);
-      x_compute = x_cur;
-      y_compute = y_cur;
-      b_compute = b_cur;
-      sem_post(&sem_io);
-      computation(x_compute, y_compute, b_compute, args);
+#ifdef DEBUG
+      printf("compute(x_cur)\n:");
+      print_buffer(x_cur, args->p*args->n*args->x_b);
+      printf("compute(y_cur):\n");
+      print_buffer(y_cur, args->n*args->y_b);
+#endif
+      computation(x_cur, y_cur, b_cur, args);
       printf("compute:\n\tx[%d](x=%d)\n\ty[%d](y=%d)\n\tb[%d]\n", 
-	     return_buffer_index(x,2,x_compute), s,
-	     return_buffer_index(y,2,y_compute), r,
-	     return_buffer_index(b,2,b_compute));
-      sleep(1);
+	     return_buffer_index(x, 2, x_cur), s,
+	     return_buffer_index(y, 2, y_cur), r,
+	     return_buffer_index(b, 2, b_cur));
+      printf("compute(b_cur):\n");
+      print_buffer(b_cur, args->p*args->y_b*args->x_b);
+      swap_buffers(&x_cur, &x_next);
+      swap_buffers(&b_prev, &b_cur);
+      sem_post(&sem_io);
     }
+    swap_buffers(&y_cur, &y_next);
   }
   pthread_exit(NULL);
 
@@ -196,13 +209,8 @@ void print_output(problem_args *args) {
   buf = (double*) malloc(args->p*args->m*args->t*sizeof(double));
   read_double( buf, b_file, args->p*args->m*args->t, 1, 0);
   printf("printing output:\n");
-  for(j =0; j < args->t; j++) {
-    for(i = 0; i < args->m; i++) {
-      printf("b(%d, %d):\n",i,j);
-      print_buffer( & ITEM(buf, args->p, i, args->m, j, args->t), args->p);
-    }
-  }
-	}
+  print_buffer( buf, args->p*args->m*args->t);
+}
 int main(int argc, char* argv[]) {
   int rc;
   int i;
@@ -248,20 +256,13 @@ int main(int argc, char* argv[]) {
   
   write_test_matrices(&in);
   
-  x_cur =  (double*)malloc(in.p * in.n * in.x_b * sizeof(double));
-  x_next = (double*)malloc(in.p * in.n * in.x_b * sizeof(double));
-  y_cur =  (double*)malloc(in.n * in.y_b * sizeof(double));
-  y_next = (double*)malloc(in.n * in.y_b * sizeof(double));
-  b_prev = (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
-  b_cur =  (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
+  x[0] =  (double*)malloc(in.p * in.n * in.x_b * sizeof(double));
+  x[1] = (double*)malloc(in.p * in.n * in.x_b * sizeof(double));
+  y[0] =  (double*)malloc(in.n * in.y_b * sizeof(double));
+  y[1] = (double*)malloc(in.n * in.y_b * sizeof(double));
+  b[0] = (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
+  b[1] =  (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
   
-  x[0] = x_cur;
-  x[1] = x_next;
-  y[0] = y_cur;
-  y[1] = y_next;
-  b[0] = b_prev;
-  b[1] = b_cur;
-
   sem_init(&sem_io, 0, 0);
   sem_init(&sem_comp, 0, 0);
 
@@ -285,12 +286,12 @@ int main(int argc, char* argv[]) {
 
   print_output(&in);
 
-  free(x_cur);
-  free(x_next);
-  free(y_cur);
-  free(y_next);
-  free(b_prev);
-  free(b_cur);
+  free(x[0]);
+  free(x[1]);
+  free(y[0]);
+  free(y[1]);
+  free(b[0]);
+  free(b[1]);
 
   pthread_exit(NULL);
   return 0;
