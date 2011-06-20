@@ -11,7 +11,7 @@
 #define ITEM(arr, x, x_s, y, y_s, z) arr[x + x_s*y + x_s*y_s*z]
 
 // if you are working on OSX...
-#define USE_NAMED_SEMAPHORES 1
+#define USE_NAMED_SEMAPHORES 0
 #define DEBUG 1
 
 FILE* x_file;

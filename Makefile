@@ -1,25 +1,29 @@
-ODIR=bin
-LDIR=lib
-SDIR=src
-IDIR=$(SDIR)
+OBJDIR=bin
+LDDIR=lib
+SRCDIR=src
+TESTDIR=test
+INCDIR=$(SDIR)
 
 CC=gcc
-CFLAGS=-Wall -g -I$(IDIR) 
+CFLAGS=-Wall -g -I$(SRCDIR) -I$(TESTDIR) 
 
 LIBS=-lpthread
-C_FILES := $(wildcard $(SDIR)/*.c)
-OBJ_FILES := $(patsubst $(SDIR)/%.c,$(ODIR)/%.o,$(C_FILES))
+C_FILES := $(wildcard $(SRCDIR)/*.c)
+C_FILES := $(wildcard $(TESTDIR)/*.c)
+OBJ_FILES := $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(C_FILES))
+OBJ_FILES := $(patsubst $(TESTDIR)/%.c,$(OBJDIR)/%.o,$(C_FILES))
 
-_DEPS = fgls.h io.h
-DEPS = $(patsubst %,$(IDIR)/%,$(_DEPS))
+_DEPS = fgls.h io.h test_framework.h read_test.h
+DEPS := $(patsubst %,$(SRCDIR)/%,$(_DEPS))
+DEPS := $(patsubst %,$(TESTDIR)/%,$(_DEPS))
 
-all: $(ODIR)/driver.x $(OBJ_FILES)
+all: $(OBJDIR)/driver.x $(OBJ_FILES)
 
-$(ODIR)/%.o: $(SDIR)/%.c $(DEPS)
+$(OBJDIR)/%.o: $(SRCDIR)/%.c $(TESTDIR)/%.c $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-$(ODIR)/driver.x: $(OBJ_FILES)
+$(OBJDIR)/driver.x: $(OBJ_FILES)
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
 clean:
-	rm -f $(ODIR)/*.o $(SDIR)/*~ core
+	rm -f $(OBJDIR)/*.o $(SRCDIR)/*~ $(TESTDIR)/*~ core
