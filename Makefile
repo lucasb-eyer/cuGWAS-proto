@@ -1,23 +1,25 @@
+ODIR=bin
+LDIR=lib
+SDIR=src
+IDIR=$(SDIR)
 
-# indicate where the object files are to be created
-CC         := gcc 
-LINKER     := $(CC) -lpthread
-#CFLAGS     := -O3 -Wall
-CFLAGS     := -Wall -g
+CC=gcc
+CFLAGS=-Wall -g -I$(IDIR) 
 
-HEADERS := io.h
+LIBS=-lpthread
+C_FILES := $(wildcard $(SDIR)/*.c)
+OBJ_FILES := $(patsubst $(SDIR)/%.c,$(ODIR)/%.o,$(C_FILES))
 
-TEST_OBJS  := main.o \
-	      io.o	
+_DEPS = fgls.h io.h
+DEPS = $(patsubst %,$(IDIR)/%,$(_DEPS))
 
-%.o: %.c $(HEADERS)
-	$(CC) $(CFLAGS) -c $< -o $@
+all: $(ODIR)/driver.x $(OBJ_FILES)
 
+$(ODIR)/%.o: $(SDIR)/%.c $(DEPS)
+	$(CC) -c -o $@ $< $(CFLAGS)
 
-driver.x: $(TEST_OBJS) $(HEADERS)
-	$(LINKER) $(TEST_OBJS) -o main.x
-test: driver.x
-	./main.x a b c < 1 1 1 1 4 4
+$(ODIR)/driver.x: $(OBJ_FILES)
+	gcc -o $@ $^ $(CFLAGS) $(LIBS)
+
 clean:
-	rm -f *.o *~ core *.x
-
+	rm -f $(ODIR)/*.o $(SDIR)/*~ core

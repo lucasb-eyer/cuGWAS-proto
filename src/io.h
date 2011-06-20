@@ -1,5 +1,5 @@
 #include <stdio.h>
-
+#include "fgls.h"
 
 int write_float(float *buffer, FILE* file, int stride, int num_indices, int start_index);
 int write_double(double *buffer, FILE* file, int stride, int num_indices, int start_index);
