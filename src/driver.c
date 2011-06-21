@@ -1,5 +1,7 @@
 #include "t_traversal.h"
+#include "test/test_framework.h"
 
 int main(int argc, char* argv[]) {
-  return t_traversal(argc, argv);
+  run_all_tests();
+  return 0;
 }

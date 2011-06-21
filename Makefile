@@ -5,25 +5,35 @@ TESTDIR=test
 INCDIR=$(SDIR)
 
 CC=gcc
-CFLAGS=-Wall -g -I$(SRCDIR) -I$(TESTDIR) 
+CFLAGS=-Wall -g -I. -I$(SRCDIR)/ -I$(TESTDIR)/ 
 
 LIBS=-lpthread
-C_FILES := $(wildcard $(SRCDIR)/*.c)
-C_FILES := $(wildcard $(TESTDIR)/*.c)
-OBJ_FILES := $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(C_FILES))
-OBJ_FILES := $(patsubst $(TESTDIR)/%.c,$(OBJDIR)/%.o,$(C_FILES))
+C_FILES_SRC := $(wildcard $(SRCDIR)/*.c)
+C_FILES_TEST := $(wildcard $(TESTDIR)/*.c)
+OBJ_FILES_SRC := \
+	$(patsubst $(SRCDIR)/%.c,$(OBJDIR)/$(SRCDIR)/%.o,$(C_FILES_SRC))
+OBJ_FILES_TEST := \
+	$(patsubst $(TESTDIR)/%.c,$(OBJDIR)/$(TESTDIR)/%.o,$(C_FILES_TEST))
 
-_DEPS = fgls.h io.h test_framework.h read_test.h
-DEPS := $(patsubst %,$(SRCDIR)/%,$(_DEPS))
-DEPS := $(patsubst %,$(TESTDIR)/%,$(_DEPS))
+DEPS = $(SRCDIR)/fgls.h $(SRCDIR)/io.h \
+	$(TESTDIR)/test_framework.h 
 
-all: $(OBJDIR)/driver.x $(OBJ_FILES)
+all: $(OBJDIR)/driver.x $(OBJ_FILES_TEST) $(OBJ_FILES_SRC)
 
-$(OBJDIR)/%.o: $(SRCDIR)/%.c $(TESTDIR)/%.c $(DEPS)
+$(OBJDIR)/$(SRCDIR)/%.o: $(SRCDIR)/%.c $(DEPS)
+	mkdir -p $(OBJDIR)/$(SRCDIR);
+	$(CC) -c -o $@ $< $(CFLAGS)
+$(OBJDIR)/$(TESTDIR)/%.o: $(TESTDIR)/%.c $(DEPS)
+	mkdir -p $(OBJDIR)/$(TESTDIR);
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-$(OBJDIR)/driver.x: $(OBJ_FILES)
+$(OBJDIR)/driver.x: $(OBJ_FILES_TEST) $(OBJ_FILES_SRC)
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
+echo:
+	echo $(C_FILES);
+	echo $(OBJ_FILES);
+	echo $(DEPS);
 clean:
-	rm -f $(OBJDIR)/*.o $(SRCDIR)/*~ $(TESTDIR)/*~ core
+	rm -rf $(OBJDIR); 
+	rm -f $(SRCDIR)/*~ $(TESTDIR)/*~ core;
