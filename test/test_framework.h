@@ -15,8 +15,8 @@ typedef struct test_timings_t {
   unsigned int io_time;
 } test_timings;
 
-void run_test(int test);
-void run_all_tests();
+void run_test(int test, int repeats, int size, int start, int last, int inc);
+void run_all_tests(int repeats, int size, int start, int last, int inc);
 
 
 #endif // TEST_FRAMEWORK_H 

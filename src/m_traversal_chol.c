@@ -1,5 +1,6 @@
 #include "fgls.h"
 #include "io.h"
+#include "bio.h"
 #if TIMING
 #include <sys/time.h>
 #include <time.h>
@@ -11,9 +12,12 @@
 #include <semaphore.h>
 #include <unistd.h>
 #include <string.h>
+
 double* x[2];
 double* y[2];
 double* b[2];
+
+double* phi;
 
 double *x_compute, *y_compute, *b_compute;
 
@@ -22,7 +26,7 @@ sem_t sem_comp;
 
 problem_args in;
 
-void* t_io(void* in) {
+void* m_io(void* in) {
 #if TIMING
   struct timeval start, end;
 #endif // TIMING
@@ -35,11 +39,11 @@ void* t_io(void* in) {
   problem_args* args = (problem_args*)in;
   int s, r;
   int i = args->m_indexed;
-  int j = args->t_indexed;
+  int j = args->m_indexed;
 #if DEBUG
   printf("read_x:\n\tx[%d](x=%d)\n", return_buffer_index(x, 2, x_cur), 0);  
   printf("read_y:\n\ty[%d](y=%d)\n", return_buffer_index(y, 2, y_cur), 0);  
-#endif //DEBUG
+#endif // DEBUG
 #if TIMING
   gettimeofday(&start, NULL);
 #endif // TIMING
@@ -49,37 +53,36 @@ void* t_io(void* in) {
   gettimeofday(&end, NULL);
   args->time->io_time += get_diff_ms(&start, &end);
 #endif // TIMING
-
   sem_post(&sem_comp);
 
-  for (r = 0; r < i; r++) {
-    swap_buffers(&y_cur, &y_next);
+  for (s = 0; s < j; s++) {
+    swap_buffers(&x_cur, &x_next);
 
 #if DEBUG
-    printf("read_y:\n\ty[%d](y=%d)\n", return_buffer_index(y, 2, y_cur), r);        
+    printf("read_x:\n\tx[%d](x=%d)\n", return_buffer_index(x, 2, x_cur), s);        
 #endif // DEBUG
 #if TIMING
     gettimeofday(&start, NULL);
 #endif // TIMING
 
-    read_y(y_cur, (r+1) % i, args);
+    read_x(x_cur, (s+1) % j, args);
 
 #if TIMING
     gettimeofday(&end, NULL);
     args->time->io_time += get_diff_ms(&start, &end);
 #endif // TIMING
 
-    for (s = 0; s < j; s++) {
-      swap_buffers(&x_cur, &x_next);
+    for (r = 0; r < i; r++) {
+      swap_buffers(&y_cur, &y_next);
 
 #if DEBUG
-      printf("read_x:\n\tx[%d](x=%d)\n", return_buffer_index(x, 2, x_cur), s);        
+      printf("read_y:\n\ty[%d](y=%d)\n", return_buffer_index(y, 2, y_cur), r);        
 #endif // DEBUG
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
 
-      read_x(x_cur, (s+1) % j, args);
+      read_y(y_cur, (r+1) % i, args);
 
 #if TIMING
       gettimeofday(&end, NULL);
@@ -102,9 +105,9 @@ void* t_io(void* in) {
       swap_buffers(&b_prev, &b_cur);
 
 #if DEBUG
-      printf("write_b:\n\tb[%d](x=%d)(y=%d)\n", 
+      printf("wrie_b:\n\tb[%d](x=%d)(y=%d)\n", 
              return_buffer_index(b, 2, b_prev), s, r);  
-#endif //DEBUG
+#endif // DEBUG
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
@@ -124,7 +127,7 @@ void* t_io(void* in) {
 //    a - args.p(h) x args.n(k) x args.x_b(i)
 //    b - args.n(k) x 1 x args.y_b(j)
 //    c - args.p(h) x args.x_b(i) x args.y_b(j)
-void t_computation( double* a, double* b, double* c, problem_args* args) {
+/*void m_computation( double* a, double* b, double* c, problem_args* args) {
   int i, j, h, k;
   double sum;
   for(j = 0; j < args->y_b; j++) {
@@ -139,8 +142,8 @@ void t_computation( double* a, double* b, double* c, problem_args* args) {
       }
     }
   }
-}
-void* t_compute(void* in) {
+  }*/
+void* m_compute(void* in) {
 #if TIMING
   struct timeval start, end;
 #endif // TIMING
@@ -153,11 +156,11 @@ void* t_compute(void* in) {
   double *b_prev = b[0];
   double *b_cur = b[1];
 
-  int i = args->m_indexed;
-  int j = args->t_indexed;
+  int i = args->t_indexed;
+  int j = args->m_indexed;
 
-  for (r = 0; r < i; r++) {
-    for (s = 0; s < j; s ++) {
+  for (s = 0; s < j; s++) {
+    for (r = 0; r < i; r ++) {
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
@@ -175,7 +178,9 @@ void* t_compute(void* in) {
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
-      t_computation(x_cur, y_cur, b_cur, args);
+      bio_chol( args->x_b, args->n, args->p, args->y_b,
+                b_prev, x_cur, phi, y_cur,
+                args->h );
 #if TIMING
       gettimeofday(&end, NULL);
       args->time->compute_time += get_diff_ms(&start, &end);
@@ -189,29 +194,34 @@ void* t_compute(void* in) {
       print_buffer(b_cur, args->p*args->y_b*args->x_b);
 #endif // DEBUG
 
-      swap_buffers(&x_cur, &x_next);
+      swap_buffers(&y_cur, &y_next);
       swap_buffers(&b_prev, &b_cur);
 
       sem_post(&sem_io);
     }
-    swap_buffers(&y_cur, &y_next);
+    swap_buffers(&x_cur, &x_next);
   }
   pthread_exit(NULL);
 }
 
-int t_traversal(char* x_f, char* y_f, char* p_f, char* b_f, problem_args* in_p) {
+int m_traversal_chol(char* x_f, char* y_f, char* phi_f, char* b_f, problem_args* in_p) {
   int rc;
   pthread_t io_thread;
   pthread_t compute_thread;
 
-  x_file = fopen(x_f, "w+b");
+  x_file = fopen(x_f, "rb");
   if(!x_file) {
     printf("error opening x_file(%s)! exiting...\n", x_f);
     exit(-1);
   }
-  y_file = fopen(y_f, "w+b");
+  y_file = fopen(y_f, "rb");
   if(!y_file) {
     printf("error opening y_file(%s)! exiting...\n", y_f);
+    exit(-1);
+  }
+  phi_file = fopen(phi_f, "rb");
+  if(!y_file) {
+    printf("error opening phi_file(%s)! exiting...\n", phi_f);
     exit(-1);
   }
   b_file = fopen(b_f, "w+b");
@@ -223,7 +233,7 @@ int t_traversal(char* x_f, char* y_f, char* p_f, char* b_f, problem_args* in_p) 
   memcpy((void*)&in, (void*)in_p, sizeof(problem_args));
 
 #if DEBUG
-  write_test_matrices(x_file, y_file, &in);
+  //  write_test_matrices(x_file, y_file, &in);
 #endif // DEBUG
   
   x[0] = (double*)malloc(in.p * in.n * in.x_b * sizeof(double));
@@ -232,16 +242,19 @@ int t_traversal(char* x_f, char* y_f, char* p_f, char* b_f, problem_args* in_p) 
   y[1] = (double*)malloc(in.n * in.y_b * sizeof(double));
   b[0] = (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
   b[1] = (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
-  
+  phi = (double*)malloc(in.n * in.n * sizeof(double));
+
   sem_init(&sem_io, 0, 0);
   sem_init(&sem_comp, 0, 0);
 
-  rc = pthread_create(&io_thread, NULL, t_io, (void*)&in);
+  read_double(phi, phi_file, in.n, in.n, 0);
+
+  rc = pthread_create(&io_thread, NULL, m_io, (void*)&in);
   if (rc){
     printf("error: return code from pthread_create() is %d\n", rc);
     pthread_exit(NULL);
   }
-  rc = pthread_create(&compute_thread, NULL, t_compute, (void*)&in);
+  rc = pthread_create(&compute_thread, NULL, m_compute, (void*)&in);
   if (rc){
     printf("error: return code from pthread_create() is %d\n", rc);
     pthread_exit(NULL);
@@ -258,6 +271,7 @@ int t_traversal(char* x_f, char* y_f, char* p_f, char* b_f, problem_args* in_p) 
 
   fclose(x_file);
   fclose(y_file);
+  fclose(phi_file);
   fclose(b_file);
 
   free(x[0]);
@@ -266,6 +280,6 @@ int t_traversal(char* x_f, char* y_f, char* p_f, char* b_f, problem_args* in_p) 
   free(y[1]);
   free(b[0]);
   free(b[1]);
-
+  free(phi);
   return 0;
 }

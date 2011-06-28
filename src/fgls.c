@@ -3,8 +3,15 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/time.h>
+#include <time.h>
 
-void print_output(const problem_args *args) {
+long get_diff_ms(struct timeval *start_time, struct timeval *end_time) {
+  long seconds = end_time->tv_sec - start_time->tv_sec;
+  long useconds = end_time->tv_usec - start_time->tv_usec;
+  return ((seconds) * 1000 + useconds/1000.0) +0.5;
+}
+void print_output(FILE* b_file, const problem_args *args) {
   double *buf;
   if(!b_file) {
     printf("b_file not initialized. Exiting...\n");
@@ -14,6 +21,7 @@ void print_output(const problem_args *args) {
   read_double(buf, b_file, args->p*args->m*args->t, 1, 0);
   printf("printing output:\n");
   print_buffer( buf, args->p*args->m*args->t);
+  free(buf);
 }
 
 void swap_buffers(double** b1, double** b2) {
@@ -31,6 +39,14 @@ void read_x(double* buf, int index, const problem_args* args) {
   read_double(buf, x_file, args->p*args->n,
               MIN(args->x_b, args->m - args->x_b*index),
               index);
+}
+
+void read_phi(double* buf, int index, const problem_args* args) {
+  if(!phi_file) {
+    printf("phi_file not initialized. Exiting...\n");
+    exit(-1);
+  }
+  read_double(buf, phi_file, args->n*args->n, 1, 0);
 }
 
 void read_y(double* buf, int index, const problem_args* args) {
@@ -72,7 +88,9 @@ void write_test_matrices(FILE* x_file, FILE* y_file, problem_args *args) {
   int i, j;
   int len_x = args->p*args->n*args->m;
   int len_y = args->n*args->t;
+#ifdef DEBUG
   printf("creating test matrices\n");
+#endif
   out = (double*)malloc(len_x*sizeof(double));
   for (j = 0; j < args->m; j++) {
     for (i = 0; i < args->p*args->n; i++) {
