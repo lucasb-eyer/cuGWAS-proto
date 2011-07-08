@@ -85,8 +85,8 @@ int main(int argc, char* argv[]) {
   int j, i, my_index, exp_index;
   for (i = 0; i < in.m; i++) {
     for (j = 0; j < in.t; j++) {
-      my_index = in.m*in.p*j + i*in.p;
-      exp_index = M_MAX*in.p*j + i*in.p;
+      my_index = in.m*j + i;
+      exp_index = M_MAX*j + i;
       read(b_mine, b_mine_f, in.p, 1, my_index);
       read(b_exp, b_exp_f, in.p, 1, exp_index);
       printf("my: %d exp: %d\n", my_index, exp_index);
