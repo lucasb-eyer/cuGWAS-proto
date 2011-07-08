@@ -8,4 +8,4 @@
 #$ -l ostype=linux
 #$ -l exclusive=true
 
-$HOME/rwth/rt203005_FGLS/trunk/run.sh
+$HOME/rt203005_FGLS/trunk/run.sh

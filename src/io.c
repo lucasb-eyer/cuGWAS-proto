@@ -8,41 +8,31 @@ int write_general(void* buffer, FILE* fp, int size, int start) {
   fseek(fp, start*sizeof(double), SEEK_SET);
   //just write bytes
   size_t out = fwrite(buffer, sizeof(double), size, fp);
-#if DEBUG
-  printf("writing:\n");
-  print_buffer(buffer, size);
-#endif // DEBUG
   if(out != size) {
     printf("error: actual write size != proposed write size\n");
   }
   return 0;
 }
-int write_float(float *buffer, FILE* file, int length, int num_indices, int start_index) {
-  return write_general((void*)buffer, file, num_indices*length*sizeof(float), start_index*length*sizeof(float));
-}
-int write_double(double *buffer, FILE* file, int length, int num_indices, int start_index) {
+
+int write(double *buffer, FILE* file, int length, int num_indices, int start_index) {
   return write_general((void*)buffer, file, num_indices*length, start_index*length);
 }
 
 int read_general(void* buffer, FILE* fp, int size, int start) {
 
-  fseek(fp, start*sizeof(double), SEEK_SET);
-  //just write bytes
-  size_t out = fread(buffer, sizeof(double), size, fp);
-  if(out != size) {
-    printf("error: actual read size != proposed read size\n");
+}
+
+int read(double *buffer, FILE* fp, int length, int num_indices, int start_index) {
+
+  fseek(fp, start_index*length*sizeof(double), SEEK_SET);
+
+  size_t out = fread(buffer, sizeof(double), num_indices*length, fp);
+  if(out != num_indices*length) {
+    printf("error: actual read size(%d) != proposed read size(%d)\n", (int)out, (int)num_indices*length);
+
   }
-#if DEBUG
-  printf("reading:\n");
-  print_buffer(buffer, size);
-#endif // DEBUG
-  return 0;
-}
-int read_float(float *buffer, FILE* file, int length, int num_indices, int start_index) {
-  return read_general((void*)buffer, file, num_indices*length*sizeof(float), start_index*length*sizeof(float));
-}
-int read_double(double *buffer, FILE* file, int length, int num_indices, int start_index) {
-  return read_general((void*)buffer, file, num_indices*length, start_index*length);
+
+  return 0; 
 }
 
 void print_buffer(double *buffer, int items) {

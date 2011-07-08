@@ -10,7 +10,6 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <semaphore.h>
-#include <unistd.h>
 #include <string.h>
 
 double* x[2];
@@ -37,9 +36,9 @@ void* m_io_e(void* in) {
   double *b_prev = b[0];
   double *b_cur = b[1];
   problem_args* args = (problem_args*)in;
-  int s, r;
+  int r, s;
   int i = args->m_indexed;
-  int j = args->m_indexed;
+  int j = args->t_indexed;
 #if DEBUG
   printf("read_x:\n\tx[%d](x=%d)\n", return_buffer_index(x, 2, x_cur), 0);  
   printf("read_y:\n\ty[%d](y=%d)\n", return_buffer_index(y, 2, y_cur), 0);  
@@ -55,34 +54,34 @@ void* m_io_e(void* in) {
 #endif // TIMING
   sem_post(&sem_comp);
 
-  for (s = 0; s < j; s++) {
+  for (r = 0; r < i; r++) {
     swap_buffers(&x_cur, &x_next);
 
 #if DEBUG
-    printf("read_x:\n\tx[%d](x=%d)\n", return_buffer_index(x, 2, x_cur), s);        
+    printf("read_x:\n\tx[%d](x=%d)\n", return_buffer_index(x, 2, x_cur), r);        
 #endif // DEBUG
 #if TIMING
     gettimeofday(&start, NULL);
 #endif // TIMING
 
-    read_x(x_cur, (s+1) % j, args);
+    read_x(x_cur, (r+1) % i, args);
 
 #if TIMING
     gettimeofday(&end, NULL);
     args->time->io_time += get_diff_ms(&start, &end);
 #endif // TIMING
 
-    for (r = 0; r < i; r++) {
+    for (s = 0; s < j; s++) {
       swap_buffers(&y_cur, &y_next);
 
 #if DEBUG
-      printf("read_y:\n\ty[%d](y=%d)\n", return_buffer_index(y, 2, y_cur), r);        
+      printf("read_y:\n\ty[%d](y=%d)\n", return_buffer_index(y, 2, y_cur), s);        
 #endif // DEBUG
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
 
-      read_y(y_cur, (r+1) % i, args);
+      read_y(y_cur, (s+1) % j, args);
 
 #if TIMING
       gettimeofday(&end, NULL);
@@ -106,13 +105,13 @@ void* m_io_e(void* in) {
 
 #if DEBUG
       printf("write_b:\n\tb[%d](x=%d)(y=%d)\n", 
-             return_buffer_index(b, 2, b_prev), s, r);  
+             return_buffer_index(b, 2, b_prev), r, s);  
 #endif // DEBUG
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
 
-      write_b(b_prev, s, r, args);
+      write_b(b_prev, r, s, args);
 
 #if TIMING
       gettimeofday(&end, NULL);
@@ -139,8 +138,8 @@ void* m_compute_e(void* in) {
   int i = args->t_indexed;
   int j = args->m_indexed;
 
-  for (s = 0; s < j; s++) {
-    for (r = 0; r < i; r ++) {
+  for (r = 0; r < i; r++) {
+    for (s = 0; s < j; s++) {
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
@@ -167,8 +166,8 @@ void* m_compute_e(void* in) {
 #endif // TIMING
 #if DEBUG
       printf("compute:\n\tx[%d](x=%d)\n\ty[%d](y=%d)\n\tb[%d]\n", 
-	     return_buffer_index(x, 2, x_cur), s,
-	     return_buffer_index(y, 2, y_cur), r,
+	     return_buffer_index(x, 2, x_cur), r,
+	     return_buffer_index(y, 2, y_cur), s,
 	     return_buffer_index(b, 2, b_cur));
       printf("compute(b_cur):\n");
       print_buffer(b_cur, args->p*args->y_b*args->x_b);
@@ -229,7 +228,7 @@ int m_traversal_eigen(char* x_f, char* y_f, char* phi_f, char* b_f, problem_args
   sem_init(&sem_io, 0, 0);
   sem_init(&sem_comp, 0, 0);
 
-  read_double(phi, phi_file, in.n, in.n, 0);
+  read(phi, phi_file, in.n, in.n, 0);
   eigenDec(in.n, phi, Z, W);
   
   rc = pthread_create(&io_thread, NULL, m_io_e, (void*)&in);

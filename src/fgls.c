@@ -5,6 +5,20 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <time.h>
+#include <math.h>
+
+double compare(double* a, double* b, int size) {
+  double out = 0.0, diff;
+  int i;
+  printf("a:\t\tb:\n");
+  for (i = 0; i < size; i++) {
+    printf("%lf\t%lf\n", a[i], b[i]);
+    if(out < fabs( a[i] - b[i]))
+      out = fabs(a[i] - b[i]);
+  }
+
+  return out;
+}
 
 long get_diff_ms(struct timeval *start_time, struct timeval *end_time) {
   long seconds = end_time->tv_sec - start_time->tv_sec;
@@ -18,7 +32,7 @@ void print_output(FILE* b_file, const problem_args *args) {
     exit(-1);
   }
   buf = (double*) malloc(args->p*args->m*args->t*sizeof(double));
-  read_double(buf, b_file, args->p*args->m*args->t, 1, 0);
+  read(buf, b_file, args->p*args->m*args->t, 1, 0);
   printf("printing output:\n");
   print_buffer( buf, args->p*args->m*args->t);
   free(buf);
@@ -36,9 +50,9 @@ void read_x(double* buf, int index, const problem_args* args) {
     printf("x_file not initialized. Exiting...\n");
     exit(-1);
   }
-  read_double(buf, x_file, args->p*args->n,
-              MIN(args->x_b, args->m - args->x_b*index),
-              index);
+  read(buf, x_file, args->p*args->n,
+       MIN(args->x_b, args->m - args->x_b*index),
+       index);
 }
 
 void read_phi(double* buf, int index, const problem_args* args) {
@@ -46,7 +60,7 @@ void read_phi(double* buf, int index, const problem_args* args) {
     printf("phi_file not initialized. Exiting...\n");
     exit(-1);
   }
-  read_double(buf, phi_file, args->n*args->n, 1, 0);
+  read(buf, phi_file, args->n*args->n, 1, 0);
 }
 
 void read_y(double* buf, int index, const problem_args* args) {
@@ -54,9 +68,9 @@ void read_y(double* buf, int index, const problem_args* args) {
     printf("y_file not initialized. Exiting...\n");
     exit(-1);
   }
-  read_double(buf, y_file, args->n, 
-              MIN(args->y_b, args->t - args->y_b*index), 
-              index);
+  read(buf, y_file, args->n, 
+       MIN(args->y_b, args->t - args->y_b*index), 
+       index);
 }
 
 int return_buffer_index(double** buffers, int size, double* cur) {
@@ -70,16 +84,23 @@ int return_buffer_index(double** buffers, int size, double* cur) {
 }
 
 
-void write_b(double* buf, int s, int r, const problem_args* args) {
+void write_b(double* buf, int r, int s, const problem_args* args) {
   if(!b_file) {
     printf("b_file not initialized. Exiting...\n");
     exit(-1);
   }
-  int y_inc, x_inc;
-  y_inc = MIN(args->y_b, args->t - args->y_b*r);
-  x_inc = MIN(args->x_b, args->m - args->x_b*s);
-  write_double(buf, b_file, args->p, 
-	       x_inc, s*x_inc*args->p+r*args->p*args->m);
+  int y_inc, x_inc, j, i, index;
+  y_inc = MIN(args->y_b, args->t - args->y_b*s);
+  x_inc = MIN(args->x_b, args->m - args->x_b*r);
+  for (j = args->y_b*s; j < args->y_b*s + y_inc; j++) {
+    for (i = args->x_b*r; i < args->x_b*r + x_inc; i++) {
+      index = args->p*(r + args->x_b*s);
+      printf("%d\n", i + args->m*j);
+      printf("%d\n", index);
+      write(&buf[index], b_file, args->p,
+            1, i + args->m*j);
+    }
+  }
 }
 
 
@@ -97,7 +118,7 @@ void write_test_matrices(FILE* x_file, FILE* y_file, problem_args *args) {
       out[i + args->p*args->n*j] = j+1;
     }
   }
-  write_double(out, x_file, args->p*args->n, args->m, 0);
+  write(out, x_file, args->p*args->n, args->m, 0);
   free(out);
 
   out = (double*)malloc(len_y*sizeof(double));
@@ -106,6 +127,6 @@ void write_test_matrices(FILE* x_file, FILE* y_file, problem_args *args) {
       out[i + j*args->n] = j+1;
     }
   }
-  write_double(out, y_file, args->n, args->t, 0);
+  write(out, y_file, args->n, args->t, 0);
   free(out);
 }

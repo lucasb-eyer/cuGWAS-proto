@@ -2,7 +2,7 @@
 #include "test/test_framework.h"
 
 #include <stdio.h>
-
+/*
 int main(int argc, char* argv[]) {
   int n_repeats, size, start, end, inc;
 
@@ -22,3 +22,4 @@ int main(int argc, char* argv[]) {
   return 0;
 }
 
+*/

@@ -48,7 +48,7 @@ void write_test(int n_repeats, int start, int end, int inc) {
     fprintf(out, "write_test_( %d, 1:2 ) = [ %d  ", p, i);
     fflush(out);
     gettimeofday(&start_time, NULL);
-    write_double(buf, fp, 1, i, 0);
+    write(buf, fp, 1, i, 0);
     gettimeofday(&end_time, NULL);
     mtime = get_diff_ms(&start_time, &end_time);  
     fprintf(out, "%lu", mtime);
@@ -115,9 +115,9 @@ void write_blocksize_test(int n_repeats, int size, int start, int end, int inc) 
     int num_blocks = size/i;
     int last_block_size = size%i;
     gettimeofday(&start_time, NULL);
-    write_double(buf, fp, num_blocks, i, 0);
+    write(buf, fp, num_blocks, i, 0);
     if( last_block_size != 0 ) 
-      write_double(buf, fp, 1, last_block_size, num_blocks*i);
+      write(buf, fp, 1, last_block_size, num_blocks*i);
     gettimeofday(&end_time, NULL);
     mtime = get_diff_ms(&start_time, &end_time);
     fprintf(out, "%lu", mtime);

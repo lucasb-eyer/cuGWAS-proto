@@ -26,13 +26,6 @@ $(OBJDIR)/$(TESTDIR)/%.o: $(TESTDIR)/%.c $(DEPS)
 $(OBJDIR)/driver.x: $(OBJ_FILES_TEST) $(OBJ_FILES_SRC)
 	gcc -o $@ $^ -lgfortranbegin -lgfortran -lm -lpthread $(LIBS) $(CFLAGS) $(LIBS)
 
-$(OBJDIR)/driver.x: $(OBJ_FILES_TEST) $(OBJ_FILES_SRC)
-	gcc -o $@ $^ $(CFLAGS) $(LIBS)
-
-echo:
-	echo $(C_FILES);
-	echo $(OBJ_FILES);
-	echo $(DEPS);
 clean:
 	rm -rf $(OBJDIR); 
 	rm -f $(SRCDIR)/*~ $(TESTDIR)/*~ core;

@@ -40,6 +40,7 @@ typedef struct problem_args_t {
   timing* time;
 } problem_args;
 
+double compare(double *a, double *b, int size);
 long get_diff_ms(struct timeval *s, struct timeval *e);
 void print_output(FILE* f, const problem_args* args);
 void swap_buffers(double** b1, double** b2);
