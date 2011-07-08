@@ -15,6 +15,7 @@ void randomize( double* buf, int size) {
 }
 
 void write_test(int n_repeats, int start, int end, int inc) {
+#if 0
   fprintf(stdout, "%c start write_test\n", '%');
 
   char *colors = "brkgmcbrkg";
@@ -76,10 +77,12 @@ void write_test(int n_repeats, int start, int end, int inc) {
 
   fclose(fp);
   fclose(out);
+#endif
 }
 
 
 void write_blocksize_test(int n_repeats, int size, int start, int end, int inc) {
+#if 0
   fprintf(stdout, "%c start write_blocksize_test\n", '%');
 
   char *colors = "brkgmcbrkg";
@@ -145,4 +148,5 @@ void write_blocksize_test(int n_repeats, int size, int start, int end, int inc) 
   
   fclose(fp);
   fclose(out);
+#endif
 }

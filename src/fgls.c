@@ -16,7 +16,6 @@ double compare(double* a, double* b, int size) {
     if(out < fabs( a[i] - b[i]))
       out = fabs(a[i] - b[i]);
   }
-
   return out;
 }
 
@@ -89,21 +88,17 @@ void write_b(double* buf, int r, int s, const problem_args* args) {
     printf("b_file not initialized. Exiting...\n");
     exit(-1);
   }
-  int y_inc, x_inc, j, i, index;
+  int y_inc, x_inc, j, buffer_index, file_index;
   y_inc = MIN(args->y_b, args->t - args->y_b*s);
   x_inc = MIN(args->x_b, args->m - args->x_b*r);
   for (j = args->y_b*s; j < args->y_b*s + y_inc; j++) {
-    for (i = args->x_b*r; i < args->x_b*r + x_inc; i++) {
-      index = args->p*(r + args->x_b*s);
-      printf("%d\n", i + args->m*j);
-      printf("%d\n", index);
-      write(&buf[index], b_file, args->p,
-            1, i + args->m*j);
-    }
+    buffer_index = x_inc*args->p*(j - args->y_b*s);
+    file_index = args->m*args->p*j + r * args->x_b*args->p;
+    write(&buf[buffer_index], b_file, args->p*x_inc, file_index);
   }
 }
 
-
+/*
 void write_test_matrices(FILE* x_file, FILE* y_file, problem_args *args) {
   double* out;
   int i, j;
@@ -130,3 +125,4 @@ void write_test_matrices(FILE* x_file, FILE* y_file, problem_args *args) {
   write(out, y_file, args->n, args->t, 0);
   free(out);
 }
+*/

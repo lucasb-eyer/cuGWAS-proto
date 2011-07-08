@@ -1,6 +1,6 @@
 #include "io.h"
 
-int write_general(void* buffer, FILE* fp, int size, int start) {
+int write(double* buffer, FILE* fp, int size, int start) {
 
   if(!fp) {
     printf("error: fp null\n");
@@ -14,13 +14,6 @@ int write_general(void* buffer, FILE* fp, int size, int start) {
   return 0;
 }
 
-int write(double *buffer, FILE* file, int length, int num_indices, int start_index) {
-  return write_general((void*)buffer, file, num_indices*length, start_index*length);
-}
-
-int read_general(void* buffer, FILE* fp, int size, int start) {
-
-}
 
 int read(double *buffer, FILE* fp, int length, int num_indices, int start_index) {
 
