@@ -88,6 +88,7 @@ void write_b(double* buf, int r, int s, const problem_args* args) {
     printf("b_file not initialized. Exiting...\n");
     exit(-1);
   }
+  //  printf("r: %d s: %d\n", r, s );
   int y_inc, x_inc, j, buffer_index, file_index;
   y_inc = MIN(args->y_b, args->t - args->y_b*s);
   x_inc = MIN(args->x_b, args->m - args->x_b*r);
@@ -95,7 +96,11 @@ void write_b(double* buf, int r, int s, const problem_args* args) {
     buffer_index = x_inc*args->p*(j - args->y_b*s);
     file_index = args->m*args->p*j + r * args->x_b*args->p;
     write(&buf[buffer_index], b_file, args->p*x_inc, file_index);
+    //    printf("buffer index: %d\n", buffer_index);
+    //    printf("file index: %d\nbuffer:\n", file_index);
+    print_buffer(&buf[buffer_index], args->p*x_inc);
   }
+  
 }
 
 /*

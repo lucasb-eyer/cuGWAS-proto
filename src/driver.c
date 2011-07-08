@@ -9,7 +9,7 @@
 #include <stdio.h>
 
 #define M_MAX 1000
-#define T_MAX 100
+#define T_MAX 500
 
 int main(int argc, char* argv[]) {
   char trav[1];
@@ -70,8 +70,8 @@ int main(int argc, char* argv[]) {
   double max;
   double *b_mine, *b_exp;
   FILE *b_mine_f, *b_exp_f;
-  b_mine = (double*)malloc(in.p*in.m*in.y_b*sizeof(double));
-  b_exp = (double*)malloc(in.p*in.m*in.y_b*sizeof(double));
+  b_mine = (double*)malloc(in.p*sizeof(double));
+  b_exp = (double*)malloc(in.p*sizeof(double));
   b_mine_f = fopen("b.out", "rb");
   if(!b_mine_f) {
     printf("ERROR opening my b\n");
@@ -82,11 +82,16 @@ int main(int argc, char* argv[]) {
     printf("ERROR opening exp b\n");
     return -1;
   }
-  int i;
-  for (i = 0; i < in.t_indexed; i++) {
-    read(b_mine, b_mine_f, in.p*in.m*in.y_b, 1, i*in.y_b);
-    read(b_exp, b_exp_f, in.p*in.y_b, in.m, M_MAX*i*in.y_b);
-    max = compare(b_mine, b_exp, in.p*in.m*in.y_b);
+  int j, i, my_index, exp_index;
+  for (i = 0; i < in.m; i++) {
+    for (j = 0; j < in.t; j++) {
+      my_index = in.m*in.p*j + i*in.p;
+      exp_index = M_MAX*in.p*j + i*in.p;
+      read(b_mine, b_mine_f, in.p, 1, my_index);
+      read(b_exp, b_exp_f, in.p, 1, exp_index);
+      printf("my: %d exp: %d\n", my_index, exp_index);
+      max = compare(b_mine, b_exp, in.p);
+    }
   }
   printf("Max elemental diff: %lf\n", max);
 #endif // DEBUG
