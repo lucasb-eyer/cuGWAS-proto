@@ -9,7 +9,7 @@
 #include <stdio.h>
 
 #define M_MAX 1000
-#define T_MAX 500
+#define T_MAX 15
 
 int main(int argc, char* argv[]) {
   char trav[1];
@@ -67,7 +67,6 @@ int main(int argc, char* argv[]) {
   }
   printf("here\n");
 #if TIMING
-  double max;
   double *b_mine, *b_exp;
   FILE *b_mine_f, *b_exp_f;
   b_mine = (double*)malloc(in.p*sizeof(double));
@@ -82,16 +81,19 @@ int main(int argc, char* argv[]) {
     printf("ERROR opening exp b\n");
     return -1;
   }
+  double temp, max = 0.0;
   int j, i, my_index, exp_index;
   for (i = 0; i < in.m; i++) {
     for (j = 0; j < in.t; j++) {
       my_index = in.m*j + i;
       exp_index = M_MAX*j + i;
-      read(b_mine, b_mine_f, in.p, 1, my_index);
-      read(b_exp, b_exp_f, in.p, 1, exp_index);
+      read(b_mine, b_mine_f, in.p, my_index);
+      read(b_exp, b_exp_f, in.p, exp_index);
       printf("my: %d exp: %d\n", my_index, exp_index);
-      max = compare(b_mine, b_exp, in.p);
-    }
+      temp = compare(b_mine, b_exp, in.p);
+      if( temp > max )
+        max = temp;
+    }  
   }
   printf("Max elemental diff: %lf\n", max);
 #endif // DEBUG

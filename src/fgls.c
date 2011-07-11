@@ -8,7 +8,7 @@
 #include <math.h>
 
 double compare(double* a, double* b, int size) {
-  double out = 0.0, diff;
+  double out = 0.0;
   int i;
   printf("a:\t\tb:\n");
   for (i = 0; i < size; i++) {
@@ -31,7 +31,7 @@ void print_output(FILE* b_file, const problem_args *args) {
     exit(-1);
   }
   buf = (double*) malloc(args->p*args->m*args->t*sizeof(double));
-  read(buf, b_file, args->p*args->m*args->t, 1, 0);
+  read(buf, b_file, args->p*args->m*args->t, 0);
   printf("printing output:\n");
   print_buffer( buf, args->p*args->m*args->t);
   free(buf);
@@ -49,9 +49,8 @@ void read_x(double* buf, int index, const problem_args* args) {
     printf("x_file not initialized. Exiting...\n");
     exit(-1);
   }
-  read(buf, x_file, args->p*args->n,
-       MIN(args->x_b, args->m - args->x_b*index),
-       index);
+  int x_inc = MIN(args->x_b, args->m - args->x_b*index);
+  read(buf, x_file, args->p*args->n*x_inc, index*args->x_b);
 }
 
 void read_phi(double* buf, int index, const problem_args* args) {
@@ -59,7 +58,7 @@ void read_phi(double* buf, int index, const problem_args* args) {
     printf("phi_file not initialized. Exiting...\n");
     exit(-1);
   }
-  read(buf, phi_file, args->n*args->n, 1, 0);
+  read(buf, phi_file, args->n*args->n, 0);
 }
 
 void read_y(double* buf, int index, const problem_args* args) {
@@ -67,9 +66,8 @@ void read_y(double* buf, int index, const problem_args* args) {
     printf("y_file not initialized. Exiting...\n");
     exit(-1);
   }
-  read(buf, y_file, args->n, 
-       MIN(args->y_b, args->t - args->y_b*index), 
-       index);
+  int y_inc = MIN(args->y_b, args->t - args->y_b*index); 
+  read(buf, y_file, args->n*y_inc, index*args->y_b);
 }
 
 int return_buffer_index(double** buffers, int size, double* cur) {
@@ -96,8 +94,6 @@ void write_b(double* buf, int r, int s, const problem_args* args) {
     buffer_index = x_inc*args->p*(j - args->y_b*s);
     file_index = args->m*args->p*j + r * args->x_b*args->p;
     write(&buf[buffer_index], b_file, args->p*x_inc, file_index);
-    //    printf("buffer index: %d\n", buffer_index);
-    //    printf("file index: %d\nbuffer:\n", file_index);
     print_buffer(&buf[buffer_index], args->p*x_inc);
   }
   

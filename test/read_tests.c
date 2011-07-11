@@ -38,7 +38,7 @@ void read_test(int n_repeats, int start, int end, int inc) {
     fprintf(out, "read_test_( %d, 1:2 ) = [ %d  ", p, i);
     fflush(out);
     gettimeofday(&start_t, NULL);
-    read(buf, fp, 1, i, 0);
+    read(buf, fp, inc, i);
     gettimeofday(&end_t, NULL);
     mtime = get_diff_ms(&start_t, &end_t);
     fprintf(out, "%lu", mtime);
@@ -102,9 +102,9 @@ void read_blocksize_test(int n_repeats, int size, int start, int end, int inc) {
     int num_blocks = size/i;
     int last_block_size = size%i;
     gettimeofday(&start_time, NULL);
-    read(buf, fp, num_blocks, i, 0);
+    read(buf, fp, num_blocks*i, 0);
     if( last_block_size != 0 ) 
-      read(buf, fp, 1, last_block_size, num_blocks*i);    
+      read(buf, fp, last_block_size, num_blocks*i);    
     gettimeofday(&end_time, NULL);
     mtime = get_diff_ms(&start_time, &end_time);
     fprintf(out, "%lu", mtime);

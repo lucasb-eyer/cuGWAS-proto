@@ -217,7 +217,7 @@ int m_traversal_chol(char* x_f, char* y_f, char* phi_f, char* b_f, problem_args*
   b[1] = (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
   phi  = (double*)malloc(in.n * in.n * sizeof(double));
 
-  read(phi, phi_file, in.n, in.n, 0);
+  read(phi, phi_file, in.n*in.n, 0);
 
 
   sem_init(&sem_io, 0, 0);

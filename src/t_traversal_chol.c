@@ -227,7 +227,7 @@ int t_traversal_chol(char* x_f, char* y_f, char* phi_f, char* b_f, problem_args*
   sem_init(&sem_io, 0, 0);
   sem_init(&sem_comp, 0, 0);
 
-  read(phi, phi_file, in.n, in.n, 0);
+  read(phi, phi_file, in.n*in.n, 0);
 
   rc = pthread_create(&io_thread, NULL, t_io, (void*)&in);
   if (rc){
