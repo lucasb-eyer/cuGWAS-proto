@@ -50,7 +50,7 @@ void read_x(double* buf, int index, const problem_args* args) {
     exit(-1);
   }
   int x_inc = MIN(args->x_b, args->m - args->x_b*index);
-  read(buf, x_file, args->p*args->n*x_inc, index*args->x_b);
+  read(buf, x_file, args->p*args->n*x_inc, index*args->x_b*args->p*args->n);
 }
 
 void read_phi(double* buf, int index, const problem_args* args) {
@@ -67,7 +67,7 @@ void read_y(double* buf, int index, const problem_args* args) {
     exit(-1);
   }
   int y_inc = MIN(args->y_b, args->t - args->y_b*index); 
-  read(buf, y_file, args->n*y_inc, index*args->y_b);
+  read(buf, y_file, args->n*y_inc, index*args->y_b*args->n);
 }
 
 int return_buffer_index(double** buffers, int size, double* cur) {
@@ -91,8 +91,8 @@ void write_b(double* buf, int r, int s, const problem_args* args) {
   y_inc = MIN(args->y_b, args->t - args->y_b*s);
   x_inc = MIN(args->x_b, args->m - args->x_b*r);
   for (j = args->y_b*s; j < args->y_b*s + y_inc; j++) {
-    buffer_index = x_inc*args->p*(j - args->y_b*s);
-    file_index = args->m*args->p*j + r * args->x_b*args->p;
+    buffer_index = args->x_b*args->p*(j - args->y_b*s);
+    file_index = args->m*args->p*j + r*args->x_b*args->p;
     write(&buf[buffer_index], b_file, args->p*x_inc, file_index);
     print_buffer(&buf[buffer_index], args->p*x_inc);
   }

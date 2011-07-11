@@ -8,7 +8,7 @@
 #include <malloc.h>
 #include <stdio.h>
 
-#define M_MAX 1000
+#define M_MAX 15
 #define T_MAX 15
 
 int main(int argc, char* argv[]) {
@@ -45,8 +45,8 @@ int main(int argc, char* argv[]) {
   scanf("%lf", &in.h);
 
 
-  in.m_indexed = (int) ((double) in.m/in.x_b);
-  in.t_indexed = (int) ((double) in.t/in.y_b);
+  in.m_indexed = (int) ((double) in.m/in.x_b+.5);
+  in.t_indexed = (int) ((double) in.t/in.y_b+.5);
 
 #if TIMING
   in.time = (timing*)malloc(sizeof(timing));
@@ -85,8 +85,8 @@ int main(int argc, char* argv[]) {
   int j, i, my_index, exp_index;
   for (i = 0; i < in.m; i++) {
     for (j = 0; j < in.t; j++) {
-      my_index = in.m*j + i;
-      exp_index = M_MAX*j + i;
+      my_index = in.p*(in.m*j + i);
+      exp_index = in.p*(M_MAX*j + i);
       read(b_mine, b_mine_f, in.p, my_index);
       read(b_exp, b_exp_f, in.p, exp_index);
       printf("my: %d exp: %d\n", my_index, exp_index);
