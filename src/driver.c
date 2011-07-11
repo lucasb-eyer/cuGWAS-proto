@@ -8,9 +8,6 @@
 #include <malloc.h>
 #include <stdio.h>
 
-#define M_MAX 15
-#define T_MAX 15
-
 int main(int argc, char* argv[]) {
   char trav[1];
   problem_args in;
@@ -65,7 +62,6 @@ int main(int argc, char* argv[]) {
       t_traversal_chol(x, y, phi, b, &in);
     }
   }
-  printf("here\n");
 #if TIMING
   double *b_mine, *b_exp;
   FILE *b_mine_f, *b_exp_f;
@@ -86,12 +82,10 @@ int main(int argc, char* argv[]) {
   for (i = 0; i < in.m; i++) {
     for (j = 0; j < in.t; j++) {
       my_index = in.p*(in.m*j + i);
-      exp_index = in.p*(M_MAX*j + i);
       read(b_mine, b_mine_f, in.p, my_index);
-      read(b_exp, b_exp_f, in.p, exp_index);
-      printf("my: %d exp: %d\n", my_index, exp_index);
+      read(b_exp, b_exp_f, in.p, my_index);
       temp = compare(b_mine, b_exp, in.p);
-      if( temp > max )
+      if(temp > max)
         max = temp;
     }  
   }

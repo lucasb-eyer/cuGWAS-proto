@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <malloc.h>
 #include <stdlib.h>
+
 void eigenDec(int n, double *Phi, double *Z, double *W)
 {
     int nb = 192;

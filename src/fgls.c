@@ -90,11 +90,10 @@ void write_b(double* buf, int r, int s, const problem_args* args) {
   int y_inc, x_inc, j, buffer_index, file_index;
   y_inc = MIN(args->y_b, args->t - args->y_b*s);
   x_inc = MIN(args->x_b, args->m - args->x_b*r);
-  for (j = args->y_b*s; j < args->y_b*s + y_inc; j++) {
-    buffer_index = args->x_b*args->p*(j - args->y_b*s);
-    file_index = args->m*args->p*j + r*args->x_b*args->p;
+  for (j = 0; j < y_inc; j++) {
+    buffer_index = args->x_b*args->p*j;
+    file_index = args->m*args->p*(args->y_b*s + j) + r*args->x_b*args->p;
     write(&buf[buffer_index], b_file, args->p*x_inc, file_index);
-    print_buffer(&buf[buffer_index], args->p*x_inc);
   }
   
 }

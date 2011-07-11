@@ -1,7 +1,7 @@
 #include "io.h"
 
 int write(double* buffer, FILE* fp, int size, int start) {
-  printf("Writing %d bytes at %d into %x from %x\n", size*sizeof(double), start*sizeof(double), fp, buffer);  
+  //  printf("Writing %d bytes at %d into %x from %x\n", size*sizeof(double), start*sizeof(double), fp, buffer);  
   fseek(fp, start*sizeof(double), SEEK_SET);
   size_t out = fwrite(buffer, sizeof(double), size, fp);
   if(out != size) {
@@ -12,7 +12,7 @@ int write(double* buffer, FILE* fp, int size, int start) {
 
 
 int read(double *buffer, FILE* fp, int size, int start) {
-  printf("Reading %d bytes at %d from %x into %x\n", size*sizeof(double), start*sizeof(double), fp, buffer);  
+  //  printf("Reading %d bytes at %d from %x into %x\n", size*sizeof(double), start*sizeof(double), fp, buffer);  
   fseek(fp, start*sizeof(double), SEEK_SET);
   size_t out = fread(buffer, sizeof(double), size, fp);
   if(out != size) {

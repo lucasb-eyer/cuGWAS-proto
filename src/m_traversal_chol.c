@@ -139,6 +139,8 @@ void* m_compute(void* in) {
   int i = args->m_indexed;
   int j = args->t_indexed;
 
+  int x_inc, y_inc;
+
   for (r = 0; r < i; r++) {
     for (s = 0; s < j; s++) {
 #if TIMING
@@ -153,7 +155,9 @@ void* m_compute(void* in) {
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
-      bio_chol(args->x_b, args->n, args->p, args->y_b,
+      x_inc = MIN(args->x_b, args->m - args->x_b*r);
+      y_inc = MIN(args->y_b, args->t - args->y_b*s); 
+      bio_chol(x_inc, args->n, args->p, y_inc,
                b_cur, x_cur, phi, y_cur,
                args->h);
 #if TIMING
