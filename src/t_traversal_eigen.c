@@ -17,7 +17,7 @@ double* x[2];
 double* y[2];
 double* b[2];
 
-double *phi, *Z, *W;
+double* phi, *Z, *W;
 
 double *x_compute, *y_compute, *b_compute;
 
@@ -54,36 +54,35 @@ void* t_io_e(void* in) {
   args->time->io_time += get_diff_ms(&start, &end);
 #endif // TIMING
   sem_post(&sem_comp);
-
   for (s = 0; s < j; s++) {
     swap_buffers(&y_cur, &y_next);
 
 #if DEBUG
-    printf("read_y:\n\ty[%d](y=%d)\n", return_buffer_index(y, 2, y_cur), s);        
+    printf("read_y:\n\ty[%d](y=%d)\n", return_buffer_index(y, 2, y_cur), (s+1)%j);        
 #endif // DEBUG
 #if TIMING
     gettimeofday(&start, NULL);
 #endif // TIMING
-
+    
     read_y(y_cur, (s+1) % j, args);
-
+    
 #if TIMING
     gettimeofday(&end, NULL);
     args->time->io_time += get_diff_ms(&start, &end);
 #endif // TIMING
-
+    
     for (r = 0; r < i; r++) {
       swap_buffers(&x_cur, &x_next);
-
+      
 #if DEBUG
-      printf("read_x:\n\tx[%d](x=%d)\n", return_buffer_index(x, 2, x_cur), r);        
+      printf("read_x:\n\tx[%d](x=%d)\n", return_buffer_index(x, 2, x_cur), (r+1)%i);        
 #endif // DEBUG
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
-
+      
       read_x(x_cur, (r+1) % i, args);
-
+      
 #if TIMING
       gettimeofday(&end, NULL);
       args->time->io_time += get_diff_ms(&start, &end);
@@ -139,8 +138,10 @@ void* t_compute_e(void* in) {
   int i = args->m_indexed;
   int j = args->t_indexed;
 
+  int x_inc, y_inc;
+
   for (s = 0; s < j; s++) {
-    for (r = 0; r < i; r ++) {
+    for (r = 0; r < i; r++) {
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
@@ -149,18 +150,15 @@ void* t_compute_e(void* in) {
       gettimeofday(&end, NULL);
       args->time->comp_mutex_wait_time += get_diff_ms(&start, &end);
 #endif // TIMING
-#if DEBUG
-      printf("compute(x_cur)\n:");
-      print_buffer(x_cur, args->p*args->n*args->x_b);
-      printf("compute(y_cur):\n");
-      print_buffer(y_cur, args->n*args->y_b);
-#endif // DEBUG
+
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
-      bio_eigen( args->x_b, args->n, args->p, args->y_b,
-                 b_prev, x_cur, Z, W, y_cur,
-                 args->h );
+      x_inc = MIN(args->x_b, args->m - args->x_b*r);
+      y_inc = MIN(args->y_b, args->t - args->y_b*s); 
+      bio_eigen(x_inc, args->n, args->p, y_inc,
+                b_cur, x_cur, Z, W, y_cur,
+                args->h);
 #if TIMING
       gettimeofday(&end, NULL);
       args->time->compute_time += get_diff_ms(&start, &end);
@@ -170,8 +168,6 @@ void* t_compute_e(void* in) {
 	     return_buffer_index(x, 2, x_cur), r,
 	     return_buffer_index(y, 2, y_cur), s,
 	     return_buffer_index(b, 2, b_cur));
-      printf("compute(b_cur):\n");
-      print_buffer(b_cur, args->p*args->y_b*args->x_b);
 #endif // DEBUG
 
       swap_buffers(&x_cur, &x_next);
@@ -223,14 +219,13 @@ int t_traversal_eigen(char* x_f, char* y_f, char* phi_f, char* b_f, problem_args
   b[0] = (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
   b[1] = (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
   phi  = (double*)malloc(in.n * in.n * sizeof(double));
-  W    = (double*)malloc(in.n * sizeof(double));
-  Z    = (double*)malloc(in.n * in.n * sizeof(double));
+  W = (double*) malloc(in.n* sizeof(double));
+  Z = (double*) malloc(in.n*in.n* sizeof(double));
+  read(phi, phi_file, in.n*in.n, 0);
+  eigenDec(in.n, phi, Z, W);
 
   sem_init(&sem_io, 0, 0);
   sem_init(&sem_comp, 0, 0);
-
-  read(phi, phi_file, in.n*in.n, 0);
-  eigenDec(in.n, phi, Z, W);
 
   rc = pthread_create(&io_thread, NULL, t_io_e, (void*)&in);
   if (rc){
@@ -264,5 +259,7 @@ int t_traversal_eigen(char* x_f, char* y_f, char* phi_f, char* b_f, problem_args
   free(b[0]);
   free(b[1]);
   free(phi);
+  free(Z);
+  free(W);
   return 0;
 }
