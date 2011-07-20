@@ -1,7 +1,7 @@
 #$ -o $HOME/output
 #$ -e $HOME/error
 #$ -P aices
-#$ -l h_rt=3:00:00
+#$ -l h_rt=10:00:00
 #$ -N fgls
 #$ -M tyler.s.rhodes@gmail.com
 #$ -l h_vmem=8G

@@ -10,10 +10,12 @@
 double compare(double* a, double* b, int size) {
   double out = 0.0;
   int i;
-  printf("a:\t\tb:\n");
+  //  printf("a:\t\tb:\n");
   for (i = 0; i < size; i++) {
-    printf("%lf\t%lf\n", a[i], b[i]);
-    if(out < fabs( a[i] - b[i]))
+    //    if (fabs(a[i] - b[i]) > 0.0001)
+    //      printf("%lf\t%lf\tat\t%d\n", a[i], b[i], i);
+
+    if(out < fabs(a[i] - b[i]))
       out = fabs(a[i] - b[i]);
   }
   return out;
@@ -86,43 +88,14 @@ void write_b(double* buf, int r, int s, const problem_args* args) {
     printf("b_file not initialized. Exiting...\n");
     exit(-1);
   }
-  //  printf("r: %d s: %d\n", r, s );
   int y_inc, x_inc, j, buffer_index, file_index;
   y_inc = MIN(args->y_b, args->t - args->y_b*s);
   x_inc = MIN(args->x_b, args->m - args->x_b*r);
+
   for (j = 0; j < y_inc; j++) {
-    buffer_index = args->x_b*args->p*j;
+    buffer_index = x_inc*args->p*j;
     file_index = args->m*args->p*(args->y_b*s + j) + r*args->x_b*args->p;
     write(&buf[buffer_index], b_file, args->p*x_inc, file_index);
   }
-  
 }
 
-/*
-void write_test_matrices(FILE* x_file, FILE* y_file, problem_args *args) {
-  double* out;
-  int i, j;
-  int len_x = args->p*args->n*args->m;
-  int len_y = args->n*args->t;
-#ifdef DEBUG
-  printf("creating test matrices\n");
-#endif
-  out = (double*)malloc(len_x*sizeof(double));
-  for (j = 0; j < args->m; j++) {
-    for (i = 0; i < args->p*args->n; i++) {
-      out[i + args->p*args->n*j] = j+1;
-    }
-  }
-  write(out, x_file, args->p*args->n, args->m, 0);
-  free(out);
-
-  out = (double*)malloc(len_y*sizeof(double));
-  for (j = 0; j < args->t; j++) {
-    for (i = 0; i < args->n; i++) {
-      out[i + j*args->n] = j+1;
-    }
-  }
-  write(out, y_file, args->n, args->t, 0);
-  free(out);
-}
-*/

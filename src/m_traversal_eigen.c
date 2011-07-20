@@ -140,7 +140,7 @@ void* m_compute_e(void* in) {
   int j = args->t_indexed;
 
   int x_inc, y_inc;
-
+  long temp;
   for (r = 0; r < i; r++) {
     for (s = 0; s < j; s++) {
 #if TIMING
@@ -149,7 +149,9 @@ void* m_compute_e(void* in) {
       sem_wait(&sem_comp);
 #if TIMING
       gettimeofday(&end, NULL);
-      args->time->comp_mutex_wait_time += get_diff_ms(&start, &end);
+      temp =  get_diff_ms(&start, &end);;
+      printf("comp_mutex wait time: %ld\n", temp); 
+      args->time->comp_mutex_wait_time += temp;
 #endif // TIMING
 
 #if TIMING
@@ -197,7 +199,7 @@ int m_traversal_eigen(char* x_f, char* y_f, char* phi_f, char* b_f, problem_args
     exit(-1);
   }
   phi_file = fopen(phi_f, "rb");
-  if(!y_file) {
+  if(!phi_file) {
     printf("error opening phi_file(%s)! exiting...\n", phi_f);
     exit(-1);
   }
@@ -219,10 +221,12 @@ int m_traversal_eigen(char* x_f, char* y_f, char* phi_f, char* b_f, problem_args
   y[1] = (double*)malloc(in.n * in.y_b * sizeof(double));
   b[0] = (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
   b[1] = (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
+
   phi  = (double*)malloc(in.n * in.n * sizeof(double));
   W = (double*) malloc(in.n* sizeof(double));
   Z = (double*) malloc(in.n*in.n* sizeof(double));
-  read(phi, phi_file, in.n*in.n, 0);
+
+  read_phi(phi, 0, &in);
   eigenDec(in.n, phi, Z, W);
 
   sem_init(&sem_io, 0, 0);
