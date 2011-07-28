@@ -6,67 +6,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void read_test(int n_repeats, size_t size, size_t start, size_t end, size_t inc) {
-  fprintf( stdout, "%c start read_test\n", '%' );
-  char *colors = "brkgmcbrkg";
-  char *ticks  = "o+*xso+*xs";
-
-  struct timeval start_t, end_t;
-
-  double* buf;
- 
-  int i, p;
-
-  FILE* fp;
-  FILE* out;
-
-  long mtime, mtime_max = 0;
-
-  fp = fopen("test/input", "rb");
-  if (!fp) {
-    fprintf(stderr, "file open error in read_test");
-    exit(-1);
-  }
-  out = fopen("read_test.m", "w");
-  if (!out) {
-    fprintf(stderr, "file open error in read_test");
-    exit(-1);
-  }
-
-  for (p = 1, i=start; i < end; i+=inc, p++) {
-    buf = (double*) malloc( size* sizeof(double));
-    fprintf(out, "read_test_( %d, 1:2 ) = [ %d  ", p, i);
-    fflush(out);
-    gettimeofday(&start_t, NULL);
-    read(buf, fp, size, i);
-    gettimeofday(&end_t, NULL);
-    mtime = get_diff_ms(&start_t, &end_t);
-    fprintf(out, "%lu", mtime);
-    fprintf(out, " ]; \n");
-    fflush(out);
-    if (mtime > mtime_max) 
-      mtime_max = mtime;
-    free(buf);
-  }
-
-  fprintf(out, "figure;\n");
-  fprintf(out, "hold on;\n");
-
-  fprintf(out, "plot( read_test_( :,1 ), read_test_( :, 2 ), '%c:%c' ); \n",
-	  colors[ 0 ], ticks[ 0 ]);
-
-  fprintf(out, "xlabel( 'input size i' );\n");
-  fprintf(out, "ylabel( 'GFLOPS/sec.' );\n");
-  fprintf(out, "axis( [ %d %d 0 %lu ] ); \n", start, end, mtime_max);
-  fprintf(out, "title( 'FLGS Read Test' );");
-  fprintf(out, "print -depsc flgs_read_test.eps;\n");
-  fprintf(out, "hold off;\n");
-  fflush(out);
-
-  fclose(fp);
-  fclose(out);
-}
-
 
 void read_blocksize_test(int n_repeats, size_t size, size_t start, size_t end, size_t inc) {
   fprintf( stdout, "%c start read_blocksize_test\n", '%' );

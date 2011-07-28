@@ -9,6 +9,7 @@
 #define Y_TRAVERSAL_TEST       5
 
 #include <stddef.h>
+#include <stdio.h>
 
 typedef struct test_timings_t {
   unsigned int comp_mutex_wait;
@@ -17,8 +18,18 @@ typedef struct test_timings_t {
   unsigned int io_time;
 } test_timings;
 
-void run_test(int test, int repeats, size_t size, size_t start, size_t last, size_t inc);
-void run_all_tests(int repeats, size_t size, size_t start, size_t last, size_t inc);
+typedef struct test_params_t {
+  int repeats;
+  size_t size;
+  size_t start;
+  size_t end;
+  size_t inc;
+  FILE* input_file;
+  FILE* output_file;
+} test_params;
 
+test_params parse_args(int argc, char* argv[]);
+
+void cleanup_test_params(test_params* i);
 
 #endif // TEST_FRAMEWORK_H 

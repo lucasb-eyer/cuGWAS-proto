@@ -7,7 +7,7 @@
 //#include "test/test_framework.h"
 #include <malloc.h>
 #include <stdio.h>
-/*
+
 int main(int argc, char* argv[]) {
   char trav[1];
   problem_args in;
@@ -99,6 +99,3 @@ int main(int argc, char* argv[]) {
 #endif // TIMING
   return 0;
 }
-
-
-*/
