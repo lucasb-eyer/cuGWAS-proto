@@ -5,6 +5,15 @@
 
 #define BUF_SIZE 256
 
+void randomize(double* buf, int size) {
+  int i;
+  for( i = 0; i < size; i++) {
+    buf[i] = 1000*rand();
+  }
+}
+
+
+
 // <repeats> <size> <start> <end> <inc>
 test_params parse_args(int argc, char* argv[]) {
   test_params out;

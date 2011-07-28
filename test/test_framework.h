@@ -1,13 +1,6 @@
 #ifndef TEST_FRAMEWORK_H
 #define TEST_FRAMEWORK_H
 
-#define READ_TEST              0
-#define READ_BLOCKSIZE_TEST    1         
-#define WRITE_TEST             2
-#define WRITE_BLOCKSIZE_TEST  3
-#define X_TRAVERSAL_TEST       4
-#define Y_TRAVERSAL_TEST       5
-
 #include <stddef.h>
 #include <stdio.h>
 
@@ -28,8 +21,11 @@ typedef struct test_params_t {
   FILE* output_file;
 } test_params;
 
-test_params parse_args(int argc, char* argv[]);
+//////// matrix operations ////////
+void randomize(double* buf, int size);
 
+//////// parameter functions ////////
+test_params parse_args(int argc, char* argv[]);
 void cleanup_test_params(test_params* i);
 
 #endif // TEST_FRAMEWORK_H 

@@ -26,16 +26,17 @@ NON_MAIN_SRC := src/bio_eigen.c \
 NON_MAIN_OBJ := \
 	$(patsubst %.c,$(OBJDIR)/%.o,$(NON_MAIN_SRC))
 
+.all: main read_test read_blocksize_test read_tests write_test write_blocksize_test write_tests clean
+.PHONY: .all 
+
 all: main
-.all: main read_test read_blocksize_test clean
-.PHONY: .all
+
 
 $(OBJDIR)/%.o: %.c
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 $(OBJDIR)/driver.x: bin/src/driver.o $(NON_MAIN_OBJ)
 	$(CC) $^ $(LIBS)  -lgfortran -lpthread  $(CFLAGS) -o $@
-#	$(CC) $^ $(LIBS)  $(CFLAGS) -o $@
 
 $(OBJDIR)/read_test.x: bin/test/read_test.o $(NON_MAIN_OBJ)
 	$(CC) $^ $(LIBS)  -lgfortran -lpthread  $(CFLAGS) -o $@
@@ -43,10 +44,21 @@ $(OBJDIR)/read_test.x: bin/test/read_test.o $(NON_MAIN_OBJ)
 $(OBJDIR)/read_blocksize_test.x: bin/test/read_blocksize_test.o $(NON_MAIN_OBJ)
 	$(CC) $^ $(LIBS)  -lgfortran -lpthread  $(CFLAGS) -o $@
 
-main: $(OBJDIR)/driver.x
-read_test: $(OBJDIR)/read_test.x
-read_blocksize_test: $(OBJDIR)/read_blocksize_test.x
-read_tests: read_test read_blocksize_test	
+$(OBJDIR)/write_test.x: bin/test/write_test.o $(NON_MAIN_OBJ)
+	$(CC) $^ $(LIBS)  -lgfortran -lpthread  $(CFLAGS) -o $@
+
+$(OBJDIR)/write_blocksize_test.x: bin/test/write_blocksize_test.o $(NON_MAIN_OBJ)
+	$(CC) $^ $(LIBS)  -lgfortran -lpthread  $(CFLAGS) -o $@
+
+
+main: $(OBJDIR)/driver.x 
+read_test: $(OBJDIR)/read_test.x 
+read_blocksize_test: $(OBJDIR)/read_blocksize_test.x 
+read_tests: read_test read_blocksize_test 
+write_test: $(OBJDIR)/write_test.x 
+write_blocksize_test: $(OBJDIR)/write_blocksize_test.x 
+write_tests: write_test write_blocksize_test 
+
 clean:
 	rm -rf $(OBJDIR); 
 	rm -f $(SRCDIR)/*~ $(TESTDIR)/*~ core;
