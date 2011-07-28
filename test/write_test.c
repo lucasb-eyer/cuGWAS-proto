@@ -34,7 +34,7 @@ void write_test(test_params* in) {
     gettimeofday(&end_t, NULL);
     mtime = get_diff_ms(&start_t, &end_t);  
 
-    fprintf(in->output_file, "%lu ];", mtime);
+    fprintf(in->output_file, "%lu ]; \n", mtime);
     if (mtime > mtime_max) 
       mtime_max = mtime;
   }

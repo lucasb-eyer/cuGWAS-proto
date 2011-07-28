@@ -34,7 +34,7 @@ test_params parse_args(int argc, char* argv[]) {
   char buffer[BUF_SIZE];
   printf("%c enter input file: ", '%');
   fgets(buffer, BUF_SIZE, stdin);
-  out.input_file = fopen(buffer, "rb");
+  out.input_file = fopen(buffer, "wb+");
   if (!out.input_file) {
     fprintf(stderr, "error opening %s\n", buffer);
     exit(-1);
