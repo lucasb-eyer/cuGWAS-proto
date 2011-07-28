@@ -1,10 +1,7 @@
 #include "fgls.h"
 #include "io.h"
-#include "t_traversal_eigen.h"
-#include "t_traversal_chol.h"
 #include "m_traversal_eigen.h"
-#include "m_traversal_chol.h"
-//#include "test/test_framework.h"
+
 #include <malloc.h>
 #include <stdio.h>
 
@@ -14,18 +11,16 @@ int main(int argc, char* argv[]) {
   char *x, *y, *phi, *b, *h;
   int eigen = 0;
 
-  if (argc != 8) {
-    printf("usage: %s <eigen|chol> <m|t> <x-in-file> <y-in-file> <phi-in-file> <h-in-file> <b-out-file>\n", argv[0]);
+  if (argc != 6) {
+    printf("usage: %s <x-in-file> <y-in-file> <phi-in-file> <h-in-file> <b-out-file>\n", argv[0]);
     return -1;
   }
 
-  eigen = argv[1][0] == 'e';
-  trav[0] = argv[2][0];
-  x = argv[3];
-  y = argv[4];
-  phi = argv[5];
-  h = argv[6];
-  b = argv[7];
+  x = argv[1];
+  y = argv[2];
+  phi = argv[3];
+  h = argv[4];
+  b = argv[5];
   printf("Please enter parameters\n");
   printf("\tm: ");
   scanf("%d", &in.m);
@@ -49,20 +44,8 @@ int main(int argc, char* argv[]) {
   gettimeofday(&start, NULL);
 #endif // TIMING
 
+  m_traversal_eigen(x, y, phi, h, b, &in);
 
-  if (trav[0] == 'm') {
-    if (eigen) {
-      m_traversal_eigen(x, y, phi, h, b, &in);
-    } else {
-      m_traversal_chol(x, y, phi, h, b, &in);
-    }
-  } else {
-    if (eigen) {
-      t_traversal_eigen(x, y, phi, h, b, &in);
-    } else {
-      t_traversal_chol(x, y, phi, h, b, &in);
-    }
-  }
 #if TIMING
   gettimeofday(&end, NULL);
   long total = get_diff_ms(&start, &end);;

@@ -16,11 +16,8 @@ NON_MAIN_SRC := src/bio_eigen.c \
 		src/eigenDec.c \
 		src/fgls.c \
 		src/io.c \
-		src/m_traversal_chol.c \
 		src/m_traversal_eigen.c \
 		src/mod_x_y.c \
-		src/t_traversal_chol.c \
-		src/t_traversal_eigen.c \
 		test/test_framework.c
 
 NON_MAIN_OBJ := \
