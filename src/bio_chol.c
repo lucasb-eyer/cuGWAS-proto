@@ -14,14 +14,14 @@
 
 void bio_chol(int m, int n, int p, int t, 
               double *B, double *X, double *Phi, double *y, 
-              double h)
+              double *h)
 {
     double *xTSx,
            *M,
            *copyX, *copyY,
            ONE = 1.0,
            ZERO = 0,
-           hh = h*h;
+           hh; 
     int    info,
            mp = m*p,
            nn = n*n,
@@ -45,6 +45,7 @@ void bio_chol(int m, int n, int p, int t,
     memcpy( copyX, X, m * p * n * sizeof(double) );
     for ( j = 0; j < t; j++ )
     {
+        hh = h[j]*h[j];
         memcpy( copyX, X, m * p * n * sizeof(double) );
         memcpy( copyY, &y[j*n], n * sizeof(double) );
         memcpy( M, Phi, n * n * sizeof(double) );

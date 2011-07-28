@@ -1,10 +1,10 @@
 #include "fgls.h"
 #include "test/test_framework.h"
-
+#include "test/io_startup_test.h"
 #include <stdio.h>
-/*
+
 int main(int argc, char* argv[]) {
-  int n_repeats, size, start, end, inc;
+  /*  int n_repeats, size, start, end, inc;
 
   fprintf( stdout, "%c number of repeats: ", '%' );
   scanf( "%d", &n_repeats );
@@ -18,8 +18,10 @@ int main(int argc, char* argv[]) {
   size*=1000;
   inc*=1000;
 
-  run_all_tests(n_repeats, size, start, end, inc);
+//  run_all_tests(n_repeats, size, start, end, inc);*/
+  io_startup_test();
+
   return 0;
 }
 
-*/
+

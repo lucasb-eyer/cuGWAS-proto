@@ -4,10 +4,10 @@
 
 #include <stdio.h>
 
-void run_test(int test, int repeats, int size, int start, int end, int inc) {
+void run_test(int test, int repeats, size_t size, size_t start, size_t end, size_t inc) {
   switch (test) {
   case READ_TEST:
-    read_test(repeats, start, end, inc);
+    read_test(repeats, size, start, end, inc);
     break;
   case READ_BLOCKSIZE_TEST:
     read_blocksize_test(repeats, size, start, end, inc);
@@ -23,7 +23,7 @@ void run_test(int test, int repeats, int size, int start, int end, int inc) {
   }
 }
 
-void run_all_tests(int repeats, int size, int start, int end, int inc) {
+void run_all_tests(int repeats, size_t size, size_t start, size_t end, size_t inc) {
   run_test(READ_TEST, repeats, size, start, end, inc);
   run_test(READ_BLOCKSIZE_TEST, repeats, size, start, end, inc);
   run_test(WRITE_TEST, repeats, size, start, end, inc);

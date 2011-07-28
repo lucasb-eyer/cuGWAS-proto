@@ -1,8 +1,9 @@
-#include <stdio.h>
 #include "fgls.h"
+#include <stdio.h>
+#include <stddef.h>
 
-int write(double *buffer, FILE* file, int size, int location);
+void write(double *buffer, FILE* file, size_t size, size_t location);
 
-int read(double *buffer, FILE* file, int size, int start);
+void read(double *buffer, FILE* file, size_t size, size_t start);
 
 void print_buffer(double *buffer, int items);

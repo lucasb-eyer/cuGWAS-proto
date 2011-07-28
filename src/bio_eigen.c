@@ -20,7 +20,7 @@
 
 /* we assume p << n reusing work in dsysv */
 void bio_eigen(int m, int n, int p, int t, 
-               double *B, double *X, double *Z, double *W, double *y, double h)
+               double *B, double *X, double *Z, double *W, double *y, double *h)
 {
     double *ZtX,     // Z' X
            *ZtY,     // Z' Y
@@ -46,7 +46,7 @@ void bio_eigen(int m, int n, int p, int t,
         fprintf(stderr, "Not enough memory\n");
         exit(-1);
     }
-
+    printf("It fits\n");
     /*printf("m: %4d\n", m);*/
     /*printf("n: %4d\n", n);*/
     /*printf("p: %4d\n", p);*/
@@ -64,7 +64,7 @@ void bio_eigen(int m, int n, int p, int t,
         /* 2) W = sqrt(alpha W - beta I)^-1 */
         // Best order? sqrt - inv
         for ( k = 0; k < n; k++)
-            Winv[k] = sqrt(1.0 / (h*h * W[k] + (1 - h*h)));
+            Winv[k] = sqrt(1.0 / (h[k]*h[k] * W[k] + (1 - h[k]*h[k])));
 
         /* X' * Z  * sqrt(Winv) */
         for (l = 0; l < n*mp; l++) XtZWinv[l] = 0.0;

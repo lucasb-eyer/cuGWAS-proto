@@ -72,6 +72,15 @@ void read_y(double* buf, int index, const problem_args* args) {
   read(buf, y_file, args->n*y_inc, index*args->y_b*args->n);
 }
 
+void read_h(double* buf, int index, const problem_args* args) {
+  if(!h_file) {
+    printf("h_file not initialized. Exiting...\n");
+    exit(-1);
+  }
+  int y_inc = MIN(args->y_b, args->t - args->y_b*index); 
+  read(buf, h_file, y_inc, index*args->y_b);
+}
+
 int return_buffer_index(double** buffers, int size, double* cur) {
   int i;
   for(i = 0; i < size; i++) {
@@ -97,5 +106,29 @@ void write_b(double* buf, int r, int s, const problem_args* args) {
     file_index = args->m*args->p*(args->y_b*s + j) + r*args->x_b*args->p;
     write(&buf[buffer_index], b_file, args->p*x_inc, file_index);
   }
+}
+
+void write_x(double* buf, int r, const problem_args* args) {
+  if(!x_file) {
+    printf("x_file not initialized. Exiting...\n");
+    exit(-1);
+  }
+  int x_inc, i, buffer_index, file_index;
+  x_inc = MIN(args->x_b, args->m - args->x_b*r);
+
+  file_index = args->p*args->n*r*args->y_b;
+  write(buf, x_file, args->p*args->n*x_inc, file_index);
+}
+
+void write_y(double* buf, int s, const problem_args* args) {
+  if(!y_file) {
+    printf("y_file not initialized. Exiting...\n");
+    exit(-1);
+  }
+  int y_inc, j, buffer_index, file_index;
+  y_inc = MIN(args->y_b, args->t - args->y_b*s);
+
+  file_index = args->n*s*args->y_b;
+  write(buf, y_file, args->n*y_inc, file_index);
 }
 

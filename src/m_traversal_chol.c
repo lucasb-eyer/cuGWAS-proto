@@ -15,6 +15,7 @@
 
 double* x[2];
 double* y[2];
+double* h[2];
 double* b[2];
 
 double* phi;
@@ -34,6 +35,8 @@ void* m_io(void* in) {
   double *x_next = x[1];
   double *y_cur = y[0];
   double *y_next = y[1];
+  double *h_cur = h[0];
+  double *h_next = h[1]; 
   double *b_prev = b[0];
   double *b_cur = b[1];
   problem_args* args = (problem_args*)in;
@@ -49,6 +52,7 @@ void* m_io(void* in) {
 #endif // TIMING
   read_x(x_cur, 0, args);
   read_y(y_cur, 0, args);
+  read_h(h_cur, 0, args);
 #if TIMING
   gettimeofday(&end, NULL);
   args->time->io_time += get_diff_ms(&start, &end);
@@ -74,6 +78,7 @@ void* m_io(void* in) {
 
     for (s = 0; s < j; s++) {
       swap_buffers(&y_cur, &y_next);
+      swap_buffers(&h_cur, &h_next);
 
 #if DEBUG
       printf("read_y:\n\ty[%d](y=%d)\n", return_buffer_index(y, 2, y_cur), (s+1)%j);        
@@ -83,6 +88,7 @@ void* m_io(void* in) {
 #endif // TIMING
 
       read_y(y_cur, (s+1) % j, args);
+      read_h(h_cur, (s+1) % j, args);
 
 #if TIMING
       gettimeofday(&end, NULL);
@@ -133,6 +139,8 @@ void* m_compute(void* in) {
   double *x_next = x[1];
   double *y_cur = y[0];
   double *y_next = y[1];
+  double *h_cur = h[0];
+  double *h_next = h[1];
   double *b_prev = b[0];
   double *b_cur = b[1];
 
@@ -159,7 +167,7 @@ void* m_compute(void* in) {
       y_inc = MIN(args->y_b, args->t - args->y_b*s); 
       bio_chol(x_inc, args->n, args->p, y_inc,
                b_cur, x_cur, phi, y_cur,
-               args->h);
+               h_cur);
 #if TIMING
       gettimeofday(&end, NULL);
       args->time->compute_time += get_diff_ms(&start, &end);
@@ -172,6 +180,7 @@ void* m_compute(void* in) {
 #endif // DEBUG
 
       swap_buffers(&y_cur, &y_next);
+      swap_buffers(&h_cur, &h_next);
       swap_buffers(&b_prev, &b_cur);
 
       sem_post(&sem_io);
@@ -181,7 +190,7 @@ void* m_compute(void* in) {
   pthread_exit(NULL);
 }
 
-int m_traversal_chol(char* x_f, char* y_f, char* phi_f, char* b_f, problem_args* in_p) {
+int m_traversal_chol(char* x_f, char* y_f, char* phi_f, char *h_f,char* b_f, problem_args* in_p) {
   int rc;
   pthread_t io_thread;
   pthread_t compute_thread;
@@ -194,6 +203,11 @@ int m_traversal_chol(char* x_f, char* y_f, char* phi_f, char* b_f, problem_args*
   y_file = fopen(y_f, "rb");
   if(!y_file) {
     printf("error opening y_file(%s)! exiting...\n", y_f);
+    exit(-1);
+  }
+  h_file = fopen(h_f, "rb");
+  if(!h_file) {
+    printf("error opening h_file(%s)! exiting...\n", h_f);
     exit(-1);
   }
   phi_file = fopen(phi_f, "rb");
@@ -217,6 +231,8 @@ int m_traversal_chol(char* x_f, char* y_f, char* phi_f, char* b_f, problem_args*
   x[1] = (double*)malloc(in.p * in.n * in.x_b * sizeof(double));
   y[0] = (double*)malloc(in.n * in.y_b * sizeof(double));
   y[1] = (double*)malloc(in.n * in.y_b * sizeof(double));
+  h[0] = (double*)malloc(in.y_b * sizeof(double));
+  h[1] = (double*)malloc(in.y_b * sizeof(double));
   b[0] = (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
   b[1] = (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
   phi  = (double*)malloc(in.n * in.n * sizeof(double));
@@ -250,6 +266,7 @@ int m_traversal_chol(char* x_f, char* y_f, char* phi_f, char* b_f, problem_args*
 
   fclose(x_file);
   fclose(y_file);
+  fclose(h_file);
   fclose(phi_file);
   fclose(b_file);
 
@@ -257,6 +274,8 @@ int m_traversal_chol(char* x_f, char* y_f, char* phi_f, char* b_f, problem_args*
   free(x[1]);
   free(y[0]);
   free(y[1]);
+  free(h[0]);
+  free(h[1]);
   free(b[0]);
   free(b[1]);
   free(phi);

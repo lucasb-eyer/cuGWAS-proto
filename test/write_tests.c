@@ -14,7 +14,7 @@ void randomize( double* buf, int size) {
   }
 }
 
-void write_test(int n_repeats, int start, int end, int inc) {
+void write_test(int n_repeats, size_t start, size_t end, size_t inc) {
 #if 0
   fprintf(stdout, "%c start write_test\n", '%');
 
@@ -32,12 +32,12 @@ void write_test(int n_repeats, int start, int end, int inc) {
   long mtime, mtime_max = 0;
 
 
-  fp = fopen("/home/rt203005/rwth/rt203005_FGLS/trunk/test/output", "w+b");
+  fp = fopen("/home/rt203005/rt203005_FGLS/trunk/test/output", "w+b");
   if (!fp) {
     fprintf(stderr, "file open error in read_test");
     exit(-1);
   }
-  out = fopen("/home/rt203005/rwth/rt203005_FGLS/trunk/write_test.m", "w");
+  out = fopen("/home/rt203005/rt203005_FGLS/trunk/write_test.m", "w");
   if (!out) {
     fprintf(stderr, "file open error in read_test");
     exit(-1);
@@ -81,7 +81,7 @@ void write_test(int n_repeats, int start, int end, int inc) {
 }
 
 
-void write_blocksize_test(int n_repeats, int size, int start, int end, int inc) {
+void write_blocksize_test(int n_repeats, size_t size, size_t start, size_t end, size_t inc) {
 #if 0
   fprintf(stdout, "%c start write_blocksize_test\n", '%');
 
@@ -98,13 +98,13 @@ void write_blocksize_test(int n_repeats, int size, int start, int end, int inc) 
   struct timeval start_time, end_time;
   long mtime, mtime_max = 0;
 
-  fp = fopen("/home/rt203005/rwth/rt203005_FGLS/trunk/test/output", "r+b");
+  fp = fopen("/home/rt203005/rt203005_FGLS/trunk/test/output", "r+b");
   if (!fp) {
     fprintf(stderr, "file open error in write_blocksize_test");
     exit(-1);
   }
 
-  out = fopen("/home/rt203005/rwth/rt203005_FGLS/trunk/write_blocksize_test.m", "w");
+  out = fopen("/home/rt203005/rt203005_FGLS/trunk/write_blocksize_test.m", "w");
   if (!out) {
     fprintf(stderr, "file open error in write_blocksize_test");
     exit(-1);

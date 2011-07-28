@@ -7,15 +7,15 @@
 //#include "test/test_framework.h"
 #include <malloc.h>
 #include <stdio.h>
-
+/*
 int main(int argc, char* argv[]) {
   char trav[1];
   problem_args in;
-  char *x, *y, *phi, *b;
+  char *x, *y, *phi, *b, *h;
   int eigen = 0;
 
-  if (argc != 7) {
-    printf("usage: %s <eigen|chol> <m|t> <x-in-file> <y-in-file> <phi-in-file> <b-out-file>\n", argv[0]);
+  if (argc != 8) {
+    printf("usage: %s <eigen|chol> <m|t> <x-in-file> <y-in-file> <phi-in-file> <h-in-file> <b-out-file>\n", argv[0]);
     return -1;
   }
 
@@ -24,7 +24,8 @@ int main(int argc, char* argv[]) {
   x = argv[3];
   y = argv[4];
   phi = argv[5];
-  b = argv[6];
+  h = argv[6];
+  b = argv[7];
   printf("Please enter parameters\n");
   printf("\tm: ");
   scanf("%d", &in.m);
@@ -38,9 +39,6 @@ int main(int argc, char* argv[]) {
   scanf("%d", &in.n);
   printf("\tp: ");
   scanf("%d", &in.p);
-  printf("\th: ");
-  scanf("%lf", &in.h);
-
 
   in.m_indexed = (int) ((double) in.m/in.x_b+.5);
   in.t_indexed = (int) ((double) in.t/in.y_b+.5);
@@ -54,15 +52,15 @@ int main(int argc, char* argv[]) {
 
   if (trav[0] == 'm') {
     if (eigen) {
-      m_traversal_eigen(x, y, phi, b, &in);
+      m_traversal_eigen(x, y, phi, h, b, &in);
     } else {
-      m_traversal_chol(x, y, phi, b, &in);
+      m_traversal_chol(x, y, phi, h, b, &in);
     }
   } else {
     if (eigen) {
-      t_traversal_eigen(x, y, phi, b, &in);
+      t_traversal_eigen(x, y, phi, h, b, &in);
     } else {
-      t_traversal_chol(x, y, phi, b, &in);
+      t_traversal_chol(x, y, phi, h, b, &in);
     }
   }
 #if TIMING
@@ -103,3 +101,4 @@ int main(int argc, char* argv[]) {
 }
 
 
+*/
