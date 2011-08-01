@@ -43,10 +43,7 @@ void* m_io_e(void* in) {
   int s, r;
   int i = args->m_indexed;
   int j = args->t_indexed;
-#if DEBUG
-  printf("read_x:\n\tx[%d](x=%d)\n", return_buffer_index(x, 2, x_cur), 0);  
-  printf("read_y:\n\ty[%d](y=%d)\n", return_buffer_index(y, 2, y_cur), 0);  
-#endif // DEBUG
+
 #if TIMING
   gettimeofday(&start, NULL);
 #endif // TIMING
@@ -62,9 +59,6 @@ void* m_io_e(void* in) {
   for (r = 0; r < i; r++) {
     swap_buffers(&x_cur, &x_next);
 
-#if DEBUG
-    printf("read_x:\n\tx[%d](x=%d)\n", return_buffer_index(x, 2, x_cur), (r+1)%i);        
-#endif // DEBUG
 #if TIMING
     gettimeofday(&start, NULL);
 #endif // TIMING
@@ -80,9 +74,6 @@ void* m_io_e(void* in) {
       swap_buffers(&y_cur, &y_next);
       swap_buffers(&h_cur, &h_next);
 
-#if DEBUG
-      printf("read_y:\n\ty[%d](y=%d)\n", return_buffer_index(y, 2, y_cur), (s+1)%j);        
-#endif // DEBUG
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
@@ -109,10 +100,6 @@ void* m_io_e(void* in) {
 
       swap_buffers(&b_prev, &b_cur);
 
-#if DEBUG
-      printf("write_b:\n\tb[%d](x=%d)(y=%d)\n", 
-             return_buffer_index(b, 2, b_prev), r, s);  
-#endif // DEBUG
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
@@ -173,12 +160,6 @@ void* m_compute_e(void* in) {
       gettimeofday(&end, NULL);
       args->time->compute_time += get_diff_ms(&start, &end);
 #endif // TIMING
-#if DEBUG
-      printf("compute:\n\tx[%d](x=%d)\n\ty[%d](y=%d)\n\tb[%d]\n", 
-	     return_buffer_index(x, 2, x_cur), r,
-	     return_buffer_index(y, 2, y_cur), s,
-	     return_buffer_index(b, 2, b_cur));
-#endif // DEBUG
 
       swap_buffers(&y_cur, &y_next);
       swap_buffers(&h_cur, &h_next);
@@ -224,10 +205,6 @@ int m_traversal_eigen(char* x_f, char* y_f, char* phi_f, char* h_f, char* b_f, p
   
   memcpy((void*)&in, (void*)in_p, sizeof(problem_args));
 
-#if DEBUG
-  //  write_test_matrices(x_file, y_file, &in);
-#endif // DEBUG
-  
   x[0] = (double*)malloc(in.p * in.n * in.x_b * sizeof(double));
   x[1] = (double*)malloc(in.p * in.n * in.x_b * sizeof(double));
   y[0] = (double*)malloc(in.n * in.y_b * sizeof(double));
@@ -262,10 +239,6 @@ int m_traversal_eigen(char* x_f, char* y_f, char* phi_f, char* h_f, char* b_f, p
 
   pthread_join(io_thread, &retval);
   pthread_join(compute_thread, &retval);
-
-#if DEBUG
-  print_output(b_file, &in);  
-#endif // DEBUG
 
   fclose(x_file);
   fclose(y_file);
