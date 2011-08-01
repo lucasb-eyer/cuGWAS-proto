@@ -11,12 +11,10 @@ LIBS=$(LDDIR)/lapack_LINUX.a $(LDDIR)/libgoto2_penrynp-r1.07.a
 #LIBS=$(FLAGS_MKL_LINKER)
 
 # all src files which do not contain a 'main' definition'
-NON_MAIN_SRC := src/bio_eigen.c \
-		src/bio_chol.c \
-		src/eigenDec.c \
+NON_MAIN_SRC := src/eigenDec.c \
 		src/fgls.c \
 		src/io.c \
-		src/m_traversal_eigen.c \
+		src/fgls_eigen.c \
 		src/mod_x_y.c \
 		test/test_framework.c
 

@@ -1,6 +1,6 @@
 #include "fgls.h"
 #include "io.h"
-#include "bio.h"
+
 #if TIMING
 #include <sys/time.h>
 #include <time.h>
@@ -11,14 +11,16 @@
 #include <pthread.h>
 #include <semaphore.h>
 
-#include <string.h>
+#define NUM_COMPUTE_THREADS 5
+#define NUM_BUFFERS_PER_THREAD 2
+#define NUM_BUFFERS NUM_BUFFERS_PER_THREAD*NUM_COMPUTE_THREADS
 
-double* x[2];
-double* y[2];
-double* h[2];
-double* b[2];
+double *x[NUM_BUFFERS];
+double *y[NUM_BUFFERS];
+double *h[NUM_BUFFERS];
+double *b[NUM_BUFFERS];
 
-double* phi, *Z, *W;
+double *phi, *Z, *W;
 
 double *x_compute, *y_compute, *b_compute;
 
@@ -27,7 +29,7 @@ sem_t sem_comp;
 
 problem_args in;
 
-void* m_io_e(void* in) {
+void* io_thread_func(void* in) {
 #if TIMING
   struct timeval start, end;
 #endif // TIMING
@@ -39,6 +41,7 @@ void* m_io_e(void* in) {
   double *h_next = h[1];
   double *b_prev = b[0];
   double *b_cur = b[1];
+
   problem_args* args = (problem_args*)in;
   int s, r;
   int i = args->m_indexed;
@@ -55,16 +58,12 @@ void* m_io_e(void* in) {
   args->time->io_time += get_diff_ms(&start, &end);
 #endif // TIMING
   sem_post(&sem_comp);
-
   for (r = 0; r < i; r++) {
     swap_buffers(&x_cur, &x_next);
-
 #if TIMING
     gettimeofday(&start, NULL);
 #endif // TIMING
-
     read_x(x_cur, (r+1) % i, args);
-
 #if TIMING
     gettimeofday(&end, NULL);
     args->time->io_time += get_diff_ms(&start, &end);
@@ -73,39 +72,29 @@ void* m_io_e(void* in) {
     for (s = 0; s < j; s++) {
       swap_buffers(&y_cur, &y_next);
       swap_buffers(&h_cur, &h_next);
-
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
-
       read_y(y_cur, (s+1) % j, args);
       read_h(h_cur, (s+1) % j, args);
 #if TIMING
       gettimeofday(&end, NULL);
       args->time->io_time += get_diff_ms(&start, &end);
 #endif // TIMING
-
       sem_post(&sem_comp);
-
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
-
       sem_wait(&sem_io);
-
 #if TIMING
       gettimeofday(&end, NULL);
       args->time->io_mutex_wait_time += get_diff_ms(&start, &end);
 #endif // TIMING
-
       swap_buffers(&b_prev, &b_cur);
-
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
-
       write_b(b_prev, r, s, args);
-
 #if TIMING
       gettimeofday(&end, NULL);
       args->time->io_time += get_diff_ms(&start, &end);
@@ -115,7 +104,7 @@ void* m_io_e(void* in) {
   pthread_exit(NULL);
 }
 
-void* m_compute_e(void* in) {
+void* compute_thread_func(void* in) {
 #if TIMING
   struct timeval start, end;
 #endif // TIMING
@@ -134,9 +123,44 @@ void* m_compute_e(void* in) {
   int j = args->t_indexed;
 
   int x_inc, y_inc;
+  int c, d, l, k;
+  int info;
+
   long temp;
-  for (r = 0; r < i; r++) {
-    for (s = 0; s < j; s++) {
+  double *h;
+  double *ZtY, *Winv, *ZtX, *XtZWinv, *xtSx;
+  int mp;
+  int n = args->n;
+  int p = args->p;
+
+  double ONE = 1.0;
+  double ZERO = 0.0;
+  int iONE = 1;
+  int iZERO = 0;
+
+  ZtY = (double *) malloc (n * args->y_b * sizeof(double));
+  Winv = (double *) malloc (n * sizeof(double));
+
+  ZtX = (double *) malloc (args->x_b * p * n * sizeof(double));
+  XtZWinv = (double *) malloc (args->x_b * p * n * sizeof(double));
+  xtSx = (double *) malloc (p * p * sizeof(double));
+
+  for (s = 0; s < j; s++) {
+    y_inc = MIN(args->y_b, args->t - args->y_b*s); 
+    h = h_cur;
+    for (d = 0; d < y_inc; d++) {
+      /* 2) W = sqrt(alpha W - beta I)^-1 */
+      // Best order? sqrt - inv
+      for (k = 0; k < n; k++)
+        Winv[k] = sqrt(1.0 / (h[k]*h[k] * W[k] + (1 - h[k]*h[k])));
+      
+      /* sqrt(Winv) * ZtY */
+      for (l = 0; l < n; l++)
+        /*dscal_(&t, &Winv[l], &ZtY[l], &n);*/
+        ZtY[(d*n + l)] *= Winv[l];
+    }
+    
+    for (r = 0; r < i; r++) {
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
@@ -144,35 +168,54 @@ void* m_compute_e(void* in) {
 #if TIMING
       gettimeofday(&end, NULL);
       temp =  get_diff_ms(&start, &end);;
-      printf("comp_mutex wait time: %ld\n", temp); 
       args->time->comp_mutex_wait_time += temp;
 #endif // TIMING
-
+      
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
       x_inc = MIN(args->x_b, args->m - args->x_b*r);
-      y_inc = MIN(args->y_b, args->t - args->y_b*s); 
-      bio_eigen(x_inc, args->n, args->p, y_inc,
-                b_cur, x_cur, Z, W, y_cur,
-                h_cur);
+      mp = p*x_inc;
+      {
+        /* X' * Z  * sqrt(Winv) */
+        for (l = 0; l < n * mp; l++) XtZWinv[l] = 0.0;
+        for (l = 0; l < n; l++)
+          daxpy_(&mp, &Winv[l], &ZtX[l*mp], &iONE, &XtZWinv[l*mp], &iONE);
+        
+        /* 7) y = XtZWinv * y */
+        dgemv_("N", &mp, &n, &ONE, XtZWinv, &mp, &ZtY[d*n], &iONE, &ZERO, &b_cur[d*mp], &iONE);
+        
+        for (c = 0; c < args->m; c++)
+        {
+          /* 5) W = XtZWinv * K^T */
+          dsyrk_("L", "N", &p, &n, &ONE, &XtZWinv[c*p], &mp, &ZERO, xtSx, &p);
+          
+          /* 8) W^-1 * y */
+          dposv_("L", &p, &iONE, xtSx, &p, &b_cur[d*mp + c*p], &p, &info);
+          if (info != 0)
+          {
+            fprintf(stderr, "Error executing dposv: %d\n", info);
+            exit(-1);
+          }
+        } 
+      }
 #if TIMING
       gettimeofday(&end, NULL);
       args->time->compute_time += get_diff_ms(&start, &end);
 #endif // TIMING
 
-      swap_buffers(&y_cur, &y_next);
-      swap_buffers(&h_cur, &h_next);
+      swap_buffers(&x_cur, &x_next);
       swap_buffers(&b_prev, &b_cur);
 
       sem_post(&sem_io);
     }
-    swap_buffers(&x_cur, &x_next);
+    swap_buffers(&y_cur, &y_next);
+    swap_buffers(&h_cur, &h_next);
   }
   pthread_exit(NULL);
 }
 
-int m_traversal_eigen(char* x_f, char* y_f, char* phi_f, char* h_f, char* b_f, problem_args* in_p) {
+int fgls_eigen(char* x_f, char* y_f, char* phi_f, char* h_f, char* b_f, problem_args* in_p) {
   int rc;
   pthread_t io_thread;
   pthread_t compute_thread;
@@ -224,13 +267,13 @@ int m_traversal_eigen(char* x_f, char* y_f, char* phi_f, char* h_f, char* b_f, p
   sem_init(&sem_io, 0, 0);
   sem_init(&sem_comp, 0, 0);
 
-  rc = pthread_create(&io_thread, NULL, m_io_e, (void*)&in);
-  if (rc){
+  rc = pthread_create(&io_thread, NULL, io_thread_func, (void*)&in);
+  if (rc) {
     printf("error: return code from pthread_create() is %d\n", rc);
     pthread_exit(NULL);
   }
-  rc = pthread_create(&compute_thread, NULL, m_compute_e, (void*)&in);
-  if (rc){
+  rc = pthread_create(&compute_thread, NULL, compute_thread_func, (void*)&in);
+  if (rc) {
     printf("error: return code from pthread_create() is %d\n", rc);
     pthread_exit(NULL);
   }

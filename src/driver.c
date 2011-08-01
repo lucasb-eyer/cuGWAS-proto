@@ -1,6 +1,6 @@
 #include "fgls.h"
 #include "io.h"
-#include "m_traversal_eigen.h"
+#include "fgls_eigen.h"
 
 #include <malloc.h>
 #include <stdio.h>
@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
   gettimeofday(&start, NULL);
 #endif // TIMING
 
-  m_traversal_eigen(x, y, phi, h, b, &in);
+  fgls_eigen(x, y, phi, h, b, &in);
 
 #if TIMING
   gettimeofday(&end, NULL);

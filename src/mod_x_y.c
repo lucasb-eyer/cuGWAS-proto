@@ -6,6 +6,8 @@
 #include <time.h>
 #endif // TIMING
 
+#include "options.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -153,10 +155,13 @@ void* compute_x_y(void* in) {
   double *y_cur = y[0];
   double *y_next = y[1];
 
+  double ONE = 1.0;
+  double ZERO = 0.0;
+
   int i = args->m_indexed;
   int j = args->t_indexed;
 
-  int x_inc, y_inc;
+  int mp, xp, y_b;
   long temp;
   for (r = 0; r < i; r++) {
 #if TIMING
@@ -172,11 +177,12 @@ void* compute_x_y(void* in) {
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
-      //      x_inc = MIN(args->x_b, args->m - args->x_b*r);
-      //      y_inc = MIN(args->y_b, args->t - args->y_b*s); 
-      //      bio_eigen(x_inc, args->n, args->p, y_inc,
-      //                b_cur, x_cur, Z, W, y_cur,
-      //                h_cur);
+      
+      mp = (args->x_b*args->p);
+      xp = MIN(args->x_b, args->m - args->x_b*r)*args->p;
+      /* X <- X^T * Z */
+      dgemm_("T", "N", &xp, &args->n, &args->n, &ONE, x_cur, &args->n, Z, &args->n, &ZERO, x_cur, &mp);
+
 #if TIMING
       gettimeofday(&end, NULL);
       args->time->compute_time += get_diff_ms(&start, &end);
@@ -199,11 +205,9 @@ void* compute_x_y(void* in) {
 #if TIMING
       gettimeofday(&start, NULL);
 #endif // TIMING
-      //      x_inc = MIN(args->x_b, args->m - args->x_b*r);
-      //      y_inc = MIN(args->y_b, args->t - args->y_b*s); 
-      //      bio_eigen(x_inc, args->n, args->p, y_inc,
-      //                b_cur, x_cur, Z, W, y_cur,
-      //                h_cur);
+      y_b = MIN(args->y_b, args->t - args->y_b * s);
+      /* 6) ZtY = Z' * Y */
+      dgemm_("T", "N", &args->n, &y_b, &args->n, &ONE, Z, &args->n, y_cur, &args->n, &ZERO, y_cur, &args->n);
 #if TIMING
       gettimeofday(&end, NULL);
       args->time->compute_time += get_diff_ms(&start, &end);
