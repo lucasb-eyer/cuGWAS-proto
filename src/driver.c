@@ -8,19 +8,15 @@
 int main(int argc, char* argv[]) {
   char trav[1];
   problem_args in;
-  char *x, *y, *phi, *b, *h;
+  char *dir;
   int eigen = 0;
 
-  if (argc != 6) {
-    printf("usage: %s <x-in-file> <y-in-file> <phi-in-file> <h-in-file> <b-out-file>\n", argv[0]);
+  if (argc != 2) {
+    printf("usage: %s <data_set_directory>\n\tnote: data_set_directory must contain files X.in, Y.in, Phi.in, H.in, and B.out (B_exp.out if checking answer)\n", argv[0]);
     return -1;
   }
 
-  x = argv[1];
-  y = argv[2];
-  phi = argv[3];
-  h = argv[4];
-  b = argv[5];
+  dir = argv[1];
   printf("Please enter parameters\n");
   printf("\tm: ");
   scanf("%d", &in.m);
@@ -44,25 +40,30 @@ int main(int argc, char* argv[]) {
   gettimeofday(&start, NULL);
 #endif // TIMING
 
-  fgls_eigen(x, y, phi, h, b, &in);
+  fgls_eigen(dir, &in);
 
 #if TIMING
   gettimeofday(&end, NULL);
   long total = get_diff_ms(&start, &end);;
 #endif // TIMING
 #if DEBUG
+  char str_buf[STR_BUFFER_SIZE];
   double *b_mine, *b_exp;
   FILE *b_mine_f, *b_exp_f;
   b_mine = (double*)malloc(in.m*in.t*in.p*sizeof(double));
   b_exp = (double*)malloc(in.m*in.t*in.p*sizeof(double));
-  b_mine_f = fopen("/home/rt203005/rt203005_FGLS/trunk/b.out", "rb");
+
+  sprintf(str_buf, "%s/B.out", dir);
+  b_mine_f = fopen(str_buf, "rb");
   if(!b_mine_f) {
-    printf("ERROR opening my b\n");
+    printf("ERROR opening %s\n", str_buf);
     return -1;
   }
-  b_exp_f = fopen("/home/rt203005/rt203005_FGLS/trunk/B_exp.out", "rb");
+
+  sprintf(str_buf, "%s/B_exp.out", dir);
+  b_exp_f = fopen(str_buf, "rb");
   if(!b_exp_f) {
-    printf("ERROR opening exp b\n");
+    printf("ERROR opening %s\n", str_buf);
     return -1;
   }
   double max;

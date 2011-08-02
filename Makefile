@@ -21,7 +21,7 @@ NON_MAIN_SRC := src/eigenDec.c \
 NON_MAIN_OBJ := \
 	$(patsubst %.c,$(OBJDIR)/%.o,$(NON_MAIN_SRC))
 
-.all: main read_test read_blocksize_test read_tests write_test write_blocksize_test write_tests clean
+.all: main read_test read_blocksize_test read_tests write_test write_blocksize_test write_tests write_h_file clean
 .PHONY: .all 
 
 all: main
@@ -45,6 +45,9 @@ $(OBJDIR)/write_test.x: bin/test/write_test.o $(NON_MAIN_OBJ)
 $(OBJDIR)/write_blocksize_test.x: bin/test/write_blocksize_test.o $(NON_MAIN_OBJ)
 	$(CC) $^ $(LIBS)  -lgfortran -lpthread  $(CFLAGS) -o $@
 
+$(OBJDIR)/write_h_file.x: bin/src/write_h_file.o
+	$(CC) $^ $(CFLAGS) -o $@
+
 
 main: $(OBJDIR)/driver.x 
 read_test: $(OBJDIR)/read_test.x 
@@ -53,6 +56,7 @@ read_tests: read_test read_blocksize_test
 write_test: $(OBJDIR)/write_test.x 
 write_blocksize_test: $(OBJDIR)/write_blocksize_test.x 
 write_tests: write_test write_blocksize_test 
+write_h_file: $(OBJDIR)/write_h_file.x
 
 clean:
 	rm -rf $(OBJDIR); 

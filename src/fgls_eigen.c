@@ -1,10 +1,6 @@
 #include "fgls.h"
 #include "io.h"
-
-#if TIMING
-#include <sys/time.h>
-#include <time.h>
-#endif // TIMING
+#include "mod_x_y.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,7 +9,7 @@
 
 #define NUM_COMPUTE_THREADS 5
 #define NUM_BUFFERS_PER_THREAD 2
-#define NUM_BUFFERS NUM_BUFFERS_PER_THREAD*NUM_COMPUTE_THREADS
+#define NUM_BUFFERS 2//NUM_BUFFERS_PER_THREAD*NUM_COMPUTE_THREADS
 
 double *x[NUM_BUFFERS];
 double *y[NUM_BUFFERS];
@@ -30,9 +26,8 @@ sem_t sem_comp;
 problem_args in;
 
 void* io_thread_func(void* in) {
-#if TIMING
-  struct timeval start, end;
-#endif // TIMING
+  DEF_TIMING();
+
   double *x_cur = x[0];
   double *x_next = x[1];
   double *y_cur = y[0];
@@ -47,67 +42,47 @@ void* io_thread_func(void* in) {
   int i = args->m_indexed;
   int j = args->t_indexed;
 
-#if TIMING
-  gettimeofday(&start, NULL);
-#endif // TIMING
+  BEGIN_TIMING();
   read_x(x_cur, 0, args);
   read_y(y_cur, 0, args);
   read_h(h_cur, 0, args);
-#if TIMING
-  gettimeofday(&end, NULL);
-  args->time->io_time += get_diff_ms(&start, &end);
-#endif // TIMING
+  END_TIMING(args->time->io_time);
+
   sem_post(&sem_comp);
   for (r = 0; r < i; r++) {
     swap_buffers(&x_cur, &x_next);
-#if TIMING
-    gettimeofday(&start, NULL);
-#endif // TIMING
+
+    BEGIN_TIMING();
     read_x(x_cur, (r+1) % i, args);
-#if TIMING
-    gettimeofday(&end, NULL);
-    args->time->io_time += get_diff_ms(&start, &end);
-#endif // TIMING
+    END_TIMING(args->time->io_time);
 
     for (s = 0; s < j; s++) {
       swap_buffers(&y_cur, &y_next);
       swap_buffers(&h_cur, &h_next);
-#if TIMING
-      gettimeofday(&start, NULL);
-#endif // TIMING
+      
+      BEGIN_TIMING();
       read_y(y_cur, (s+1) % j, args);
       read_h(h_cur, (s+1) % j, args);
-#if TIMING
-      gettimeofday(&end, NULL);
-      args->time->io_time += get_diff_ms(&start, &end);
-#endif // TIMING
+      END_TIMING(args->time->io_time);
+
       sem_post(&sem_comp);
-#if TIMING
-      gettimeofday(&start, NULL);
-#endif // TIMING
+
+      BEGIN_TIMING();
       sem_wait(&sem_io);
-#if TIMING
-      gettimeofday(&end, NULL);
-      args->time->io_mutex_wait_time += get_diff_ms(&start, &end);
-#endif // TIMING
+      END_TIMING(args->time->io_mutex_wait_time);
+
       swap_buffers(&b_prev, &b_cur);
-#if TIMING
-      gettimeofday(&start, NULL);
-#endif // TIMING
+
+      BEGIN_TIMING();
       write_b(b_prev, r, s, args);
-#if TIMING
-      gettimeofday(&end, NULL);
-      args->time->io_time += get_diff_ms(&start, &end);
-#endif // TIMING
+      END_TIMING(args->time->io_time);
     }
   }
   pthread_exit(NULL);
 }
 
 void* compute_thread_func(void* in) {
-#if TIMING
-  struct timeval start, end;
-#endif // TIMING
+  DEF_TIMING()
   problem_args* args = (problem_args*)in;
   int r, s;
   double *x_cur = x[0];
@@ -146,6 +121,8 @@ void* compute_thread_func(void* in) {
   xtSx = (double *) malloc (p * p * sizeof(double));
 
   for (s = 0; s < j; s++) {
+
+    BEGIN_TIMING();
     y_inc = MIN(args->y_b, args->t - args->y_b*s); 
     h = h_cur;
     for (d = 0; d < y_inc; d++) {
@@ -159,21 +136,14 @@ void* compute_thread_func(void* in) {
         /*dscal_(&t, &Winv[l], &ZtY[l], &n);*/
         ZtY[(d*n + l)] *= Winv[l];
     }
-    
+    END_TIMING(args->time->compute_time);
     for (r = 0; r < i; r++) {
-#if TIMING
-      gettimeofday(&start, NULL);
-#endif // TIMING
+
+      BEGIN_TIMING();
       sem_wait(&sem_comp);
-#if TIMING
-      gettimeofday(&end, NULL);
-      temp =  get_diff_ms(&start, &end);;
-      args->time->comp_mutex_wait_time += temp;
-#endif // TIMING
+      END_TIMING(args->time->comp_mutex_wait_time);
       
-#if TIMING
-      gettimeofday(&start, NULL);
-#endif // TIMING
+      BEGIN_TIMING();
       x_inc = MIN(args->x_b, args->m - args->x_b*r);
       mp = p*x_inc;
       {
@@ -197,12 +167,9 @@ void* compute_thread_func(void* in) {
             fprintf(stderr, "Error executing dposv: %d\n", info);
             exit(-1);
           }
-        } 
+        }
       }
-#if TIMING
-      gettimeofday(&end, NULL);
-      args->time->compute_time += get_diff_ms(&start, &end);
-#endif // TIMING
+      END_TIMING(args->time->compute_time);
 
       swap_buffers(&x_cur, &x_next);
       swap_buffers(&b_prev, &b_cur);
@@ -215,34 +182,45 @@ void* compute_thread_func(void* in) {
   pthread_exit(NULL);
 }
 
-int fgls_eigen(char* x_f, char* y_f, char* phi_f, char* h_f, char* b_f, problem_args* in_p) {
+int fgls_eigen(char* dir, problem_args* in_p) {
   int rc;
   pthread_t io_thread;
   pthread_t compute_thread;
 
-  x_file = fopen(x_f, "rb");
+  char str_buf[STR_BUFFER_SIZE];
+
+  sprintf(str_buf, "%s/X.in", dir);
+  x_file = fopen(str_buf, "rb");
   if(!x_file) {
-    printf("error opening x_file(%s)! exiting...\n", x_f);
+    printf("error opening x_file(%s)! exiting...\n", str_buf);
     exit(-1);
   }
-  y_file = fopen(y_f, "rb");
+
+  sprintf(str_buf, "%s/Y.in", dir);
+  y_file = fopen(str_buf, "rb");
   if(!y_file) {
-    printf("error opening y_file(%s)! exiting...\n", y_f);
+    printf("error opening y_file(%s)! exiting...\n", str_buf);
     exit(-1);
   }
-  phi_file = fopen(phi_f, "rb");
+
+  sprintf(str_buf, "%s/Phi.in", dir);
+  phi_file = fopen(str_buf, "rb");
   if(!phi_file) {
-    printf("error opening phi_file(%s)! exiting...\n", phi_f);
+    printf("error opening phi_file(%s)! exiting...\n", str_buf);
     exit(-1);
   }
-  h_file = fopen(h_f, "rb");
+
+  sprintf(str_buf, "%s/H.in", dir);
+  h_file = fopen(str_buf, "rb");
   if(!h_file) {
-    printf("error opening phi_file(%s)! exiting...\n", h_f);
+    printf("error opening h_file(%s)! exiting...\n", str_buf);
     exit(-1);
   }
-  b_file = fopen(b_f, "w+b");
+
+  sprintf(str_buf, "%s/B.in", dir);
+  b_file = fopen(str_buf, "w+b");
   if(!b_file) {
-    printf("error opening b_file(%s)! exiting...\n", b_f);
+    printf("error opening b_file(%s)! exiting...\n", str_buf);
     exit(-1);
   }
   
@@ -261,11 +239,24 @@ int fgls_eigen(char* x_f, char* y_f, char* phi_f, char* h_f, char* b_f, problem_
   W = (double*) malloc(in.n* sizeof(double));
   Z = (double*) malloc(in.n*in.n* sizeof(double));
 
+  printf("mem allocated\n");
+
   read_phi(phi, 0, &in);
   eigenDec(in.n, phi, Z, W);
 
+  printf("eigen decomp done\n");
+
+  // (env_variable, value, replace?)
+  setenv("OMP_NUM_THREADS", "7", 1);  
+  mod_x_y(Z, &in);
+  setenv("OMP_NUM_THREADS", "1", 1);  
+
+  printf("modify-x-and-y done\n");
+
   sem_init(&sem_io, 0, 0);
   sem_init(&sem_comp, 0, 0);
+
+  printf("starting compute and io threads\n");
 
   rc = pthread_create(&io_thread, NULL, io_thread_func, (void*)&in);
   if (rc) {
@@ -279,9 +270,10 @@ int fgls_eigen(char* x_f, char* y_f, char* phi_f, char* h_f, char* b_f, problem_
   }
 
   void* retval;
-
   pthread_join(io_thread, &retval);
   pthread_join(compute_thread, &retval);
+
+  printf("joining compute and io threads\n");
 
   fclose(x_file);
   fclose(y_file);
@@ -293,12 +285,6 @@ int fgls_eigen(char* x_f, char* y_f, char* phi_f, char* h_f, char* b_f, problem_
   free(x[1]);
   free(y[0]);
   free(y[1]);
-  free(h[0]);
-  free(h[1]);
-  free(b[0]);
-  free(b[1]);
-  free(phi);
-  free(Z);
-  free(W);
+
   return 0;
 }
