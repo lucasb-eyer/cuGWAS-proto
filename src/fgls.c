@@ -3,41 +3,30 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
+
+#if TIMING
 #include <sys/time.h>
 #include <time.h>
-#include <math.h>
+#endif // TIMING
 
 double compare(double* a, double* b, int size) {
   double out = 0.0;
   int i;
-  //  printf("a:\t\tb:\n");
   for (i = 0; i < size; i++) {
-    //    if (fabs(a[i] - b[i]) > 0.0001)
-    //      printf("%lf\t%lf\tat\t%d\n", a[i], b[i], i);
-
     if(out < fabs(a[i] - b[i]))
       out = fabs(a[i] - b[i]);
   }
   return out;
 }
 
+#if TIMING
 long get_diff_ms(struct timeval *start_time, struct timeval *end_time) {
   long seconds = end_time->tv_sec - start_time->tv_sec;
   long useconds = end_time->tv_usec - start_time->tv_usec;
   return ((seconds) * 1000 + useconds/1000.0) +0.5;
 }
-void print_output(FILE* b_file, const problem_args *args) {
-  double *buf;
-  if(!b_file) {
-    printf("b_file not initialized. Exiting...\n");
-    exit(-1);
-  }
-  buf = (double*) malloc(args->p*args->m*args->t*sizeof(double));
-  read(buf, b_file, args->p*args->m*args->t, 0);
-  printf("printing output:\n");
-  print_buffer( buf, args->p*args->m*args->t);
-  free(buf);
-}
+#endif // TIMING
 
 void swap_buffers(double** b1, double** b2) {
   double* temp;
@@ -109,26 +98,26 @@ void write_b(double* buf, int r, int s, const problem_args* args) {
 }
 
 void write_x(double* buf, int r, const problem_args* args) {
-  if(!x_file) {
-    printf("x_file not initialized. Exiting...\n");
+  if(!x_tmp_file) {
+    printf("x_tmp_file not initialized. Exiting...\n");
     exit(-1);
   }
   int x_inc, i, buffer_index, file_index;
   x_inc = MIN(args->x_b, args->m - args->x_b*r);
 
-  file_index = args->p*args->n*r*args->y_b;
-  write(buf, x_file, args->p*args->n*x_inc, file_index);
+  file_index = args->p*args->n*r*args->x_b;
+  write(buf, x_tmp_file, args->p*args->n*x_inc, file_index);
 }
 
 void write_y(double* buf, int s, const problem_args* args) {
-  if(!y_file) {
-    printf("y_file not initialized. Exiting...\n");
+  if(!y_tmp_file) {
+    printf("y_tmp_file not initialized. Exiting...\n");
     exit(-1);
   }
   int y_inc, j, buffer_index, file_index;
   y_inc = MIN(args->y_b, args->t - args->y_b*s);
 
   file_index = args->n*s*args->y_b;
-  write(buf, y_file, args->n*y_inc, file_index);
+  write(buf, y_tmp_file, args->n*y_inc, file_index);
 }
 

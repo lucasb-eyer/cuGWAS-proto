@@ -34,10 +34,10 @@
 
 #define STR_BUFFER_SIZE 256
 
-
-
 FILE* x_file;
+FILE* x_tmp_file;
 FILE* y_file;
+FILE* y_tmp_file;
 FILE* h_file;
 FILE* phi_file;
 FILE* b_file;
@@ -68,7 +68,6 @@ long get_diff_ms(struct timeval *s, struct timeval *e);
 #endif // TIMING
 
 double compare(double *a, double *b, int size);
-void print_output(FILE* f, const problem_args* args);
 void swap_buffers(double** b1, double** b2);
 void read_x(double* buf, int index, const problem_args* args);
 void read_phi(double* buf, int index, const problem_args* args);
@@ -78,6 +77,5 @@ int  return_buffer_index(double** buffers, int size, double* cur);
 void write_b(double* buf, int s, int r, const problem_args* args);
 void write_x(double* buf, int s, const problem_args* args);
 void write_y(double* buf, int r, const problem_args* args);
-void write_test_matrices(FILE* x_file, FILE* y_file, problem_args *args);
 
 #endif // FGLS_H

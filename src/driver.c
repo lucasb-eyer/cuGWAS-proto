@@ -12,7 +12,7 @@ int main(int argc, char* argv[]) {
   int eigen = 0;
 
   if (argc != 2) {
-    printf("usage: %s <data_set_directory>\n\tnote: data_set_directory must contain files X.in, Y.in, Phi.in, H.in, and B.out (B_exp.out if checking answer)\n", argv[0]);
+    printf("usage: %s <data_set_directory>\n\tnote: data_set_directory must contain files X.in, Y.in, Phi.in, and H.in (B_exp.out if checking answer)\n", argv[0]);
     return -1;
   }
 

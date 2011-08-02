@@ -1,0 +1,44 @@
+!!NOTE: before running make, the directories 'bin/src' and 'bin/test' must be created!!
+
+The current Makefile targets are:
+	read_test
+	read_blocksize_test
+	write_test
+	write_blocksize_test
+	write_h_file
+	main
+
+'main' - default. Will compile bin/driver.x. This is the FGLS_eigen solver.
+	note: timings can be turned on and off using the TIMING define in src/fgls.h
+'read_test' - This will compile bin/read_test.x. This tests the IO capabilities of the system, 
+	and prints out a matlab script with results. The arguments are as follows:
+	nrepeats: number of times to run (returns avg of results).
+	size: blocksize to be read.
+	start: starting offset to be read from
+	end: ending offset.
+	inc: size between reading a block.
+	Or in pseudo-code: read a block of size <size> for [start:inc:end]
+'read_blocksize_test' - This will compile bin/read_blocksize_test.x. This tests the speed of different io blocksizes
+	and prints out a matlab script with results. The arguments are as follows:
+	nrepeats: number of times to run (returns avg of results).
+	size: total size of file
+	start: starting blocksize to test.
+	end: ending blocksize to test
+	inc: increment to blocksize
+	Or in psuedo-code: read <size> bytes using blocksizes [start:inc:end]
+'write_test' - This will compile bin/write_test.x. This tests the IO capabilities of the system, 
+	and prints out a matlab script with results. The arguments are as follows:
+	nrepeats: number of times to run (returns avg of results).
+	size: blocksize to be written.
+	start: starting offset to write to.
+	end: ending offset.
+	inc: size between writing a block.
+	Or in pseudo-code: write a block of size <size> for [start:inc:end]
+'write_blocksize_test' - This will compile bin/write_blocksize_test.x. This tests the speed of different io blocksizes
+	and prints out a matlab script with results. The arguments are as follows:
+	nrepeats: number of times to run (returns avg of results).
+	size: total size of file
+	start: starting blocksize to test.
+	end: ending blocksize to test
+	inc: increment to blocksize
+	Or in psuedo-code: write <size> bytes using blocksizes [start:inc:end]

@@ -28,7 +28,6 @@ void* io_x(void* in) {
   problem_args* args = (problem_args*)in;
   int r;
   int i = args->m_indexed;
-  int j = args->t_indexed;
 
   BEGIN_TIMING();
   read_x(x_cur, 0, args);
@@ -105,7 +104,7 @@ void* compute_x(void* in) {
   int i = args->m_indexed;
   int j = args->t_indexed;
 
-  int mp, xp, y_b;
+  int mp, xp;
   long temp;
   for (r = 0; r < i; r++) {
     BEGIN_TIMING();
@@ -119,6 +118,8 @@ void* compute_x(void* in) {
     dgemm_("T", "N", &xp, &args->n, &args->n, &ONE, x_cur, &args->n, Z, &args->n, &ZERO, x_cur, &mp);
     END_TIMING(args->time->compute_time);
 
+    sem_post(&sem_io);
+    
     swap_buffers(&x_cur, &x_next);
   }
   pthread_exit(NULL);
@@ -137,7 +138,7 @@ void* compute_y(void* in) {
 
   int j = args->t_indexed;
 
-  int mp, xp, y_b;
+  int mp, y_b;
   long temp;
   for (s = 0; s < j; s++) {
     BEGIN_TIMING();
@@ -150,6 +151,7 @@ void* compute_y(void* in) {
     dgemm_("T", "N", &args->n, &y_b, &args->n, &ONE, Z, &args->n, y_cur, &args->n, &ZERO, y_cur, &args->n);
     END_TIMING(args->time->compute_time);
 
+    sem_post(&sem_io);
     swap_buffers(&y_cur, &y_next);
   }
   pthread_exit(NULL);
@@ -189,6 +191,8 @@ int mod_x_y(double* Z_in, problem_args* in_p) {
   pthread_join(io_thread, &retval);
   pthread_join(compute_thread, &retval);
 
+  printf("done with x\n");
+
   // reset semaphores
   sem_init(&sem_io, 0, 0);
   sem_init(&sem_comp, 0, 0);
@@ -206,6 +210,8 @@ int mod_x_y(double* Z_in, problem_args* in_p) {
 
   pthread_join(io_thread, &retval);
   pthread_join(compute_thread, &retval);
+
+  printf("done with y\n");
 
   free(x[0]);
   free(x[1]);
