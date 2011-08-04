@@ -51,7 +51,6 @@ void* io_x(void* in) {
     BEGIN_TIMING();
     write_x(x_cur, r, args);
     END_TIMING(args->time->io_time);
-
   }
   pthread_exit(NULL);
 }
@@ -104,7 +103,8 @@ void* compute_x(void* in) {
   int i = args->m_indexed;
   int j = args->t_indexed;
 
-  int mp, xp;
+  int mp;
+  int n = args->n;
   long temp;
   for (r = 0; r < i; r++) {
     BEGIN_TIMING();
@@ -112,14 +112,12 @@ void* compute_x(void* in) {
     END_TIMING(args->time->comp_mutex_wait_time);
 
     BEGIN_TIMING();
-    mp = (args->x_b*args->p);
-    xp = MIN(args->x_b, args->m - args->x_b*r)*args->p;
+    mp = MIN(args->x_b, args->m - args->x_b*r)*args->p;
     /* X <- X^T * Z */
-    dgemm_("T", "N", &xp, &args->n, &args->n, &ONE, x_cur, &args->n, Z, &args->n, &ZERO, x_cur, &mp);
+    dgemm_("T", "N", &mp, &n, &n, &ONE, x_cur, &n, Z, &n, &ZERO, x_cur, &mp);
     END_TIMING(args->time->compute_time);
 
     sem_post(&sem_io);
-    
     swap_buffers(&x_cur, &x_next);
   }
   pthread_exit(NULL);
@@ -138,7 +136,8 @@ void* compute_y(void* in) {
 
   int j = args->t_indexed;
 
-  int mp, y_b;
+  int n = args->n;
+  int t;
   long temp;
   for (s = 0; s < j; s++) {
     BEGIN_TIMING();
@@ -146,9 +145,9 @@ void* compute_y(void* in) {
     END_TIMING(args->time->comp_mutex_wait_time);
 
     BEGIN_TIMING();
-    y_b = MIN(args->y_b, args->t - args->y_b * s);
+    t = MIN(args->y_b, args->t - args->y_b * s);
     /* 6) ZtY = Z' * Y */
-    dgemm_("T", "N", &args->n, &y_b, &args->n, &ONE, Z, &args->n, y_cur, &args->n, &ZERO, y_cur, &args->n);
+    dgemm_("T", "N", &n, &t, &n, &ONE, Z, &n, y_cur, &n, &ZERO, y_cur, &n);
     END_TIMING(args->time->compute_time);
 
     sem_post(&sem_io);

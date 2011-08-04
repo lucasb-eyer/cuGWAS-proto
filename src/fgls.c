@@ -66,8 +66,7 @@ void read_h(double* buf, int index, const problem_args* args) {
     printf("h_file not initialized. Exiting...\n");
     exit(-1);
   }
-  int y_inc = MIN(args->y_b, args->t - args->y_b*index); 
-  read(buf, h_file, y_inc, index*args->y_b);
+  read(buf, h_file, args->t, 0);
 }
 
 int return_buffer_index(double** buffers, int size, double* cur) {

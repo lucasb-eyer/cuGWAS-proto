@@ -7,15 +7,15 @@
 #include <pthread.h>
 #include <semaphore.h>
 
-#define NUM_COMPUTE_THREADS 5
+#define NUM_COMPUTE_THREADS 1
 #define NUM_BUFFERS_PER_THREAD 2
-#define NUM_BUFFERS 2//NUM_BUFFERS_PER_THREAD*NUM_COMPUTE_THREADS
+#define NUM_BUFFERS NUM_BUFFERS_PER_THREAD*NUM_COMPUTE_THREADS
 
 double *x[NUM_BUFFERS];
 double *y[NUM_BUFFERS];
-double *h[NUM_BUFFERS];
 double *b[NUM_BUFFERS];
 
+double *h;
 double *phi, *Z, *W;
 double *Winv, *XtZWinv, *xtSx;
 
@@ -25,7 +25,7 @@ sem_t sem_io;
 sem_t sem_comp_x;
 sem_t sem_comp_y;
 
-problem_args in;
+problem_args in[NUM_COMPUTE_THREADS];
 
 void* io_thread_func(void* in) {
   DEF_TIMING();
@@ -34,44 +34,37 @@ void* io_thread_func(void* in) {
   double *x_next = x[1];
   double *y_cur = y[0];
   double *y_next = y[1];
-  double *h_cur = h[0];
-  double *h_next = h[1];
   double *b_prev = b[0];
   double *b_cur = b[1];
 
   problem_args* args = (problem_args*)in;
   int s, r;
   int i = args->m_indexed;
-  int j = args->t_indexed;
 
   printf("first io\n");
   BEGIN_TIMING();
-  printf("\tx:\n");
+  printf("x\n");
   read_x(x_cur, 0, args);
-  printf("\ty:\n");
+  printf("y\n");
   read_y(y_cur, 0, args);
-  printf("\th:\n");
-  read_h(h_cur, 0, args);
   END_TIMING(args->time->io_time);
 
   sem_post(&sem_comp_x);
   sem_post(&sem_comp_y);
-  for (s = 0; s < j; s++) {
+  for (s = 0; s < args->t; s++) {
     swap_buffers(&y_cur, &y_next);
-    swap_buffers(&h_cur, &h_next);
     
     BEGIN_TIMING();
-    printf("second io\n");
-    read_y(y_cur, (s+1) % j, args);
-    read_h(h_cur, (s+1) % j, args);
+    read_y(y_cur, (s+1) % args->t, args);
     END_TIMING(args->time->io_time);
     sem_post(&sem_comp_y);
+
     for (r = 0; r < i; r++) {
       swap_buffers(&x_cur, &x_next);
+
       BEGIN_TIMING();
       read_x(x_cur, (r+1) % i, args);
       END_TIMING(args->time->io_time);
-
       sem_post(&sem_comp_x);
 
       BEGIN_TIMING();
@@ -96,20 +89,16 @@ void* compute_thread_func(void* in) {
   double *x_next = x[1];
   double *y_cur = y[0];
   double *y_next = y[1];
-  double *h_cur = h[0];
-  double *h_next = h[1];
   double *b_prev = b[0];
   double *b_cur = b[1];
 
   int i = args->m_indexed;
-  int j = args->t_indexed;
 
   int x_inc, y_inc;
   int c, d, l, k;
   int info;
 
   long temp;
-  double *h;
   int mp;
   int n = args->n;
   int p = args->p;
@@ -121,60 +110,59 @@ void* compute_thread_func(void* in) {
 
   printf("compute: start\n");
 
-
-  for (s = 0; s < j; s++) {
+  for (s = 0; s < args->t; s++) {
     BEGIN_TIMING();
     sem_wait(&sem_comp_y);
-    END_TIMING(args->time->comp_mutex_wait_time);      
+    END_TIMING(args->time->comp_mutex_wait_time);
 
-    printf("compute: start y_compute\n");
     BEGIN_TIMING();
-    y_inc = MIN(args->y_b, args->t - args->y_b*s); 
-    h = h_cur;
-    double h2;
-    for (d = 0; d < y_inc; d++) {
-      /* 2) W = sqrt(alpha W - beta I)^-1 */
-      // Best order? sqrt - inv
-      h2 = h[d]*h[d];
-      for (k = 0; k < n; k++)
-        Winv[k] = sqrt(1.0 / (h2 * W[k] + (1 - h2)));
-      
-      /* sqrt(Winv) * ZtY */
-      for (l = 0; l < n; l++)
-        /*dscal_(&t, &Winv[l], &ZtY[l], &n);*/
-        y_cur[(d*n + l)] *= Winv[l];
-    }
+    /* 2) W = sqrt(alpha W - beta I)^-1 */
+    // Best order? sqrt - inv
+    for (k = 0; k < n; k++)
+      Winv[k] = sqrt(1.0 / (h[s]*h[s] * W[k] + (1 - h[s]*h[s])));
+    
+    /* sqrt(Winv) * ZtY */
+    for (l = 0; l < n; l++)
+      /*dscal_(&t, &Winv[l], &ZtY[l], &n);*/
+      y_cur[s*n + l] *= Winv[l];
     END_TIMING(args->time->compute_time);
+
     for (r = 0; r < i; r++) {
-      
       BEGIN_TIMING();
       sem_wait(&sem_comp_x);
-      END_TIMING(args->time->comp_mutex_wait_time);      
+      END_TIMING(args->time->comp_mutex_wait_time);
 
       BEGIN_TIMING();
       x_inc = MIN(args->x_b, args->m - args->x_b*r);
       mp = p*x_inc;
+
+      /* X' * Z  * sqrt(Winv) */
+      for (l = 0; l < n * mp; l++) XtZWinv[l] = 0.0;
+      for (l = 0; l < n; l++)
+        daxpy_(&mp, &Winv[l], &x_cur[l*mp], &iONE, &XtZWinv[l*mp], &iONE);
+      
+      /* 7) y = XtZWinv * y */
+      dgemv_("N", &mp, &n, &ONE, XtZWinv, &mp, &y_cur[s*n], &iONE, &ZERO, &b_cur[s*mp], &iONE);
+      
+      for (c = 0; c < x_inc; c++)
       {
-        /* X' * Z  * sqrt(Winv) */
-        for (l = 0; l < n * mp; l++) XtZWinv[l] = 0.0;
-        for (l = 0; l < n; l++)
-          daxpy_(&mp, &Winv[l], &x_cur[l*mp], &iONE, &XtZWinv[l*mp], &iONE);
-        
-        /* 7) y = XtZWinv * y */
-        dgemv_("N", &mp, &n, &ONE, XtZWinv, &mp, &y_cur[d*n], &iONE, &ZERO, &b_cur[d*mp], &iONE);
-        
-        for (c = 0; c < x_inc; c++)
+        /* 5) W = XtZWinv * K^T */
+        dsyrk_("L", "N", &p, &n, &ONE, &XtZWinv[c*p], &mp, &ZERO, xtSx, &p);
+
+        printf("x_cur:\n");
+        print_buffer(x_cur, mp);
+        printf("y_cur:\n");
+        print_buffer(y_cur, n);
+        printf("xtSx:\n");
+        print_buffer(xtSx, p);
+        printf("b_cur:\n");
+        print_buffer(&b_cur[s*mp + c*p], p);
+        /* 8) W^-1 * y */
+        dposv_("L", &p, &iONE, xtSx, &p, &b_cur[s*mp + c*p], &p, &info);
+        if (info != 0)
         {
-          /* 5) W = XtZWinv * K^T */
-          dsyrk_("L", "N", &p, &n, &ONE, &XtZWinv[c*p], &mp, &ZERO, xtSx, &p);
-          
-          /* 8) W^-1 * y */
-          dposv_("L", &p, &iONE, xtSx, &p, &b_cur[d*mp + c*p], &p, &info);
-          if (info != 0)
-          {
-            fprintf(stderr, "Error executing dposv: %d\n", info);
-            exit(-1);
-          }
+          fprintf(stderr, "Error executing dposv: %d\n", info);
+          exit(-1);
         }
       }
       END_TIMING(args->time->compute_time);
@@ -185,13 +173,12 @@ void* compute_thread_func(void* in) {
       sem_post(&sem_io);
     }
     swap_buffers(&y_cur, &y_next);
-    swap_buffers(&h_cur, &h_next);
   }
   pthread_exit(NULL);
 }
 
 int fgls_eigen(char* dir, problem_args* in_p) {
-  int rc;
+  int rc, i;
   pthread_t io_thread;
   pthread_t compute_thread;
 
@@ -245,41 +232,36 @@ int fgls_eigen(char* dir, problem_args* in_p) {
     printf("error opening b_file(%s)! exiting...\n", str_buf);
     exit(-1);
   }
-  
-  memcpy((void*)&in, (void*)in_p, sizeof(problem_args));
 
-  x[0] = (double*)malloc(in.p * in.n * in.x_b * sizeof(double));
-  x[1] = (double*)malloc(in.p * in.n * in.x_b * sizeof(double));
-  y[0] = (double*)malloc(in.n * in.y_b * sizeof(double));
-  y[1] = (double*)malloc(in.n * in.y_b * sizeof(double));
-  h[0] = (double*)malloc(in.y_b * sizeof(double));
-  h[1] = (double*)malloc(in.y_b * sizeof(double));
-  b[0] = (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
-  b[1] = (double*)malloc(in.p * in.x_b * in.y_b *sizeof(double));
-
-  phi  = (double*)malloc(in.n * in.n * sizeof(double));
-  W = (double*) malloc(in.n * sizeof(double));
-  Z = (double*) malloc(in.n * in.n * sizeof(double));
+  for (i = 0; i < NUM_BUFFERS; i++) {
+    x[i] = (double*)malloc(in_p->p * in_p->n * in_p->x_b * sizeof(double));
+    y[i] = (double*)malloc(in_p->n * sizeof(double));
+    b[i] = (double*)malloc(in_p->p * in_p->x_b *sizeof(double));
+  }
+  h   = (double*)malloc(in_p->t * sizeof(double));
+  phi = (double*)malloc(in_p->n * in_p->n * sizeof(double));
+  W   = (double*)malloc(in_p->n * sizeof(double));
+  Z   = (double*)malloc(in_p->n * in_p->n * sizeof(double));
 
   //////// computation specific mem ////////
-  //  ZtY = (double *) malloc (n * args->y_b * sizeof(double));
-  Winv = (double *) malloc (in.n * sizeof(double));
-
-  //  ZtX = (double *) malloc (args->x_b * p * n * sizeof(double));
-  XtZWinv = (double *) malloc (in.x_b * in.p * in.n * sizeof(double));
-  xtSx = (double *) malloc (in.p * in.p * sizeof(double));
+  Winv    = (double*)malloc(in_p->n * sizeof(double));
+  XtZWinv = (double*)malloc(in_p->x_b * in_p->p * in_p->n * sizeof(double));
+  xtSx    = (double*)malloc(in_p->p * in_p->p * sizeof(double));
 
   printf("mem allocated\n");
 
-  read_phi(phi, 0, &in);
-  eigenDec(in.n, phi, Z, W);
+  read_h(h, 0, in_p);
+  read_phi(phi, 0, in_p);
+  eigenDec(in_p->n, phi, Z, W);
 
   printf("eigen decomp done\n");
 
   // (env_variable, value, replace?)
-  //  setenv("OMP_NUM_THREADS", "7", 1);  
-  mod_x_y(Z, &in);
-  //  setenv("OMP_NUM_THREADS", "1", 1);  
+  setenv("OMP_NUM_THREADS", "7", 1);
+  mod_x_y(Z, in_p);
+  setenv("OMP_NUM_THREADS", "1", 1);
+
+  printf("modify-x-and-y done\n");
 
   fclose(x_file);
   fclose(x_tmp_file);
@@ -301,12 +283,16 @@ int fgls_eigen(char* dir, problem_args* in_p) {
     exit(-1);
   }
 
-  printf("modify-x-and-y done\n");
-
+  // for (i = 0; i < NUM_COMPUTE_THREADS; i++) {
   sem_init(&sem_io, 0, 0);
   sem_init(&sem_comp_x, 0, 0);
   sem_init(&sem_comp_y, 0, 0);
-
+    //  }
+  
+  // only compute by single columns of y
+  in_p->t_indexed = in_p->t;
+  in_p->y_b = 1;
+    
   printf("starting compute and io threads\n");
 
   rc = pthread_create(&io_thread, NULL, io_thread_func, (void*)&in);
@@ -314,17 +300,25 @@ int fgls_eigen(char* dir, problem_args* in_p) {
     printf("error: return code from pthread_create() is %d\n", rc);
     pthread_exit(NULL);
   }
-  rc = pthread_create(&compute_thread, NULL, compute_thread_func, (void*)&in);
-  if (rc) {
-    printf("error: return code from pthread_create() is %d\n", rc);
-    pthread_exit(NULL);
+
+  for (i = 0; i < NUM_COMPUTE_THREADS; i++) {
+    // copy problem_args, per thread (with thread id)
+    memcpy((void*)&in[i], (void*)in_p, sizeof(problem_args));    
+    in[i].id = i;
+
+    rc = pthread_create(&compute_thread, NULL, compute_thread_func, (void*)&in);
+    if (rc) {
+      printf("error: return code from pthread_create() is %d\n", rc);
+      pthread_exit(NULL);
+    }
   }
 
   void* retval;
   pthread_join(io_thread, &retval);
-  pthread_join(compute_thread, &retval);
-
-  printf("joining compute and io threads\n");
+  for (i = 0; i < NUM_COMPUTE_THREADS; i++) {
+    pthread_join(compute_thread, &retval);
+  }
+  printf("joining compute and io threads done\n");
 
   fclose(x_file);
   fclose(y_file);
@@ -332,10 +326,19 @@ int fgls_eigen(char* dir, problem_args* in_p) {
   fclose(phi_file);
   fclose(b_file);
 
-  free(x[0]);
-  free(x[1]);
-  free(y[0]);
-  free(y[1]);
+  for (i = 0; i < NUM_BUFFERS; i ++) {
+    free(x[i]);
+    free(y[i]);
+    free(b[i]);
+  }
+  free(h);
+  free(phi);
+  free(W);
+  free(Z);
+
+  free(Winv);
+  free(XtZWinv);
+  free(xtSx);
 
   return 0;
 }

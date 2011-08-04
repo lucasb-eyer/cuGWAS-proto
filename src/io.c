@@ -12,6 +12,7 @@ void write(double* buffer, FILE* fp, size_t size, size_t start) {
 
 
 void read(double *buffer, FILE* fp, size_t size, size_t start) {
+  printf("Reading %d bytes at %d\n", (int)size*sizeof(double), (int)start);
   fseek(fp, start*sizeof(double), SEEK_SET);
   size_t out = fread(buffer, sizeof(double), size, fp);
   if(out != size) {

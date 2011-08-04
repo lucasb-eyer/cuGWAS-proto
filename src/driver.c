@@ -24,6 +24,7 @@ int main(int argc, char* argv[]) {
   scanf("%d", &in.t);
   printf("\tm blocksize: ");
   scanf("%d", &in.x_b);
+  // Still needed for OOC gemm
   printf("\tt blocksize: ");
   scanf("%d", &in.y_b);
   printf("\tn: ");
