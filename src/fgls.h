@@ -1,7 +1,7 @@
 #ifndef FGLS_H
 #define FGLS_H
 
-#define DEBUG 0
+#define DEBUG 1
 #define TIMING 0
 
 #include <stdio.h>
@@ -59,6 +59,8 @@ typedef struct problem_args_t {
   int m_indexed;
   int t_indexed;
   int id;
+  int NUM_COMPUTE_THREADS;
+  /*int NUM_BUFFERS_PER_THREAD;*/
 #if TIMING
   timing* time;
 #endif TIMING

@@ -31,9 +31,12 @@ int main(int argc, char* argv[]) {
   scanf("%d", &in.n);
   printf("\tp: ");
   scanf("%d", &in.p);
+  printf("\tcompute threads: ");
+  scanf("%d", &in.NUM_COMPUTE_THREADS);
 
   in.m_indexed = (int) ((double) in.m/in.x_b+.5);
   in.t_indexed = (int) ((double) in.t/in.y_b+.5);
+  /*in.NUM_BUFFERS_PER_THREAD = 2;*/
 
 #if TIMING
   in.time = (timing*)malloc(sizeof(timing));
@@ -70,6 +73,16 @@ int main(int argc, char* argv[]) {
   double max;
   read(b_mine, b_mine_f, in.p*in.m*in.t, 0);
   read(b_exp, b_exp_f, in.p*in.m*in.t, 0);
+  printf("out[0]: %12e\n", b_mine[0]);
+  printf("exp[0]: %12e\n", b_exp[0]);
+  printf("out[1]: %12e\n", b_mine[1]);
+  printf("exp[1]: %12e\n", b_exp[1]);
+  printf("out[3000]: %12e\n", b_mine[3000]);
+  printf("exp[3000]: %12e\n", b_exp[3000]);
+  printf("out[2]: %12e\n", b_mine[2]);
+  printf("exp[2]: %12e\n", b_exp[2]);
+  printf("out[6000]: %12e\n", b_mine[6000]);
+  printf("exp[6000]: %12e\n", b_exp[6000]);
   max = compare(b_mine, b_exp, in.m*in.t*in.p);
   printf("Max elemental diff: %lf\n", max);
 #endif // DEBUG

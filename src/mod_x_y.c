@@ -8,23 +8,27 @@
 #include <pthread.h>
 #include <semaphore.h>
 
-double* x[2];
-double* y[2];
+static double* x[2];
+static double* x_res[2];
+static double* y[2];
+static double* y_res[2];
 
-double* Z;
+static double* Z;
 
-double *x_compute, *y_compute, *b_compute;
+/*double *x_compute, *y_compute; //, *b_compute;*/
 
-sem_t sem_io;
-sem_t sem_comp;
+static sem_t sem_io;
+static sem_t sem_comp;
 
-problem_args in;
+static problem_args in;
 
 void* io_x(void* in) {
   DEF_TIMING();
 
   double *x_cur = x[0];
   double *x_next = x[1];
+  double *x_res_prev = x_res[0];
+  double *x_res_cur  = x_res[1];
   problem_args* args = (problem_args*)in;
   int r;
   int i = args->m_indexed;
@@ -49,7 +53,8 @@ void* io_x(void* in) {
     END_TIMING(args->time->io_mutex_wait_time);
 
     BEGIN_TIMING();
-    write_x(x_cur, r, args);
+    write_x(x_res_prev, r, args);
+    swap_buffers(&x_res_prev, &x_res_cur);
     END_TIMING(args->time->io_time);
   }
   pthread_exit(NULL);
@@ -59,6 +64,8 @@ void* io_y(void* in) {
 
   double *y_cur = y[0];
   double *y_next = y[1];
+  double *y_res_cur  = y_res[0];
+  double *y_res_prev = y_res[1];
   problem_args* args = (problem_args*)in;
   int s;
   int j = args->t_indexed;
@@ -83,8 +90,9 @@ void* io_y(void* in) {
     END_TIMING(args->time->io_mutex_wait_time);
     
     BEGIN_TIMING();
-    write_y(y_cur, s, args);
+    write_y(y_res_cur, s, args);
     END_TIMING(args->time->io_time);
+    swap_buffers(&y_res_cur, &y_res_prev);
   }
   pthread_exit(NULL);
 }
@@ -94,10 +102,12 @@ void* compute_x(void* in) {
 
   problem_args* args = (problem_args*)in;
   int r;
-  double *x_cur = x[0];
+  double *x_cur  = x[0];
   double *x_next = x[1];
+  double *x_res_cur  = x_res[0];
+  double *x_res_next = x_res[1];
 
-  double ONE = 1.0;
+  double ONE  = 1.0;
   double ZERO = 0.0;
 
   int i = args->m_indexed;
@@ -113,12 +123,15 @@ void* compute_x(void* in) {
 
     BEGIN_TIMING();
     mp = MIN(args->x_b, args->m - args->x_b*r)*args->p;
-    /* X <- X^T * Z */
-    dgemm_("T", "N", &mp, &n, &n, &ONE, x_cur, &n, Z, &n, &ZERO, x_cur, &mp);
+    /* X_res <- Z^T * X */
+    dgemm_("T", "N", &n, &mp, &n, &ONE, Z, &n, x_cur, &n, &ZERO, x_res_cur, &n);
     END_TIMING(args->time->compute_time);
+	printf("X[0]: %f\n", x_cur[0]);
+	printf("Z' * X[0]: %f\n", x_res_cur[0]);
 
     sem_post(&sem_io);
     swap_buffers(&x_cur, &x_next);
+    swap_buffers(&x_res_cur, &x_res_next);
   }
   pthread_exit(NULL);
 }
@@ -130,6 +143,8 @@ void* compute_y(void* in) {
   int s;
   double *y_cur = y[0];
   double *y_next = y[1];
+  double *y_res_cur  = y_res[0];
+  double *y_res_next = y_res[1];
 
   double ONE = 1.0;
   double ZERO = 0.0;
@@ -147,11 +162,13 @@ void* compute_y(void* in) {
     BEGIN_TIMING();
     t = MIN(args->y_b, args->t - args->y_b * s);
     /* 6) ZtY = Z' * Y */
-    dgemm_("T", "N", &n, &t, &n, &ONE, Z, &n, y_cur, &n, &ZERO, y_cur, &n);
+    dgemm_("T", "N", &n, &t, &n, &ONE, Z, &n, y_cur, &n, &ZERO, y_res_cur, &n);
     END_TIMING(args->time->compute_time);
+	printf("ZtY[0]: %f\n", y_res_cur[0]);
 
     sem_post(&sem_io);
     swap_buffers(&y_cur, &y_next);
+    swap_buffers(&y_res_cur, &y_res_next);
   }
   pthread_exit(NULL);
 }
@@ -166,10 +183,15 @@ int mod_x_y(double* Z_in, problem_args* in_p) {
 
   x[0] = (double*)malloc(in.p * in.n * in.x_b * sizeof(double));
   x[1] = (double*)malloc(in.p * in.n * in.x_b * sizeof(double));
+  x_res[0] = (double*)malloc(in.p * in.n * in.x_b * sizeof(double));
+  x_res[1] = (double*)malloc(in.p * in.n * in.x_b * sizeof(double));
   y[0] = (double*)malloc(in.n * in.y_b * sizeof(double));
   y[1] = (double*)malloc(in.n * in.y_b * sizeof(double));
+  y_res[0] = (double*)malloc(in.n * in.y_b * sizeof(double));
+  y_res[1] = (double*)malloc(in.n * in.y_b * sizeof(double));
 
   Z = Z_in;
+  printf("Z[0]: %f\n", Z[0]);
 
   sem_init(&sem_io, 0, 0);
   sem_init(&sem_comp, 0, 0);
@@ -214,8 +236,12 @@ int mod_x_y(double* Z_in, problem_args* in_p) {
 
   free(x[0]);
   free(x[1]);
+  free(x_res[0]);
+  free(x_res[1]);
   free(y[0]);
   free(y[1]);
+  free(y_res[0]);
+  free(y_res[1]);
 
   return 0;
 }
