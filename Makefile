@@ -3,19 +3,24 @@ LDDIR=libs
 SRCDIR=src
 TESTDIR=test
 INCDIR=include
-CC=icc
+#CC=gcc
+#CC=icc
 CFLAGS=-I$(SRCDIR)/ -I$(TESTDIR)/ -I.
 
+CC=vtcc
+CFLAGS+= -g -DVTRACE -vt:mt -vt:inst manual -pthread -vt:verbose
+
 #LIBS=$(LDDIR)/lapack_LINUX.a $(LDDIR)/libgoto2_penrynp-r1.07.a
-LIBS=$(LDDIR)/lapack_LINUX.a $(LDDIR)/libgoto2.a
+#LIBS=$(LDDIR)/lapack_LINUX.a $(LDDIR)/libgoto2.a -lgfortran -lpthread
 #LIBS=$(FLAGS_MKL_LINKER)
+LIBS = -lrwthmkl -lguide -lpthread -lmkl_lapack
+LIBPATHS=$(MKLROOT)/lib/em64t/:$(INTELROOT)/lib/intel64
 
 # all src files which do not contain a 'main' definition'
-NON_MAIN_SRC := src/eigenDec.c \
-		src/fgls.c \
+NON_MAIN_SRC := src/fgls.c \
 		src/io.c \
 		src/fgls_eigen.c \
-		src/mod_x_y.c \
+		src/preloop.c \
 		test/test_framework.c
 
 NON_MAIN_OBJ := \
@@ -31,19 +36,19 @@ $(OBJDIR)/%.o: %.c
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 $(OBJDIR)/driver.x: bin/src/driver.o $(NON_MAIN_OBJ)
-	$(CC) $^ $(LIBS)  -lgfortran -lpthread  $(CFLAGS) -o $@
+	$(CC) $^ $(LIBS) -L$(LIBPATHS) $(CFLAGS) -lrt -o $@
 
 $(OBJDIR)/read_test.x: bin/test/read_test.o $(NON_MAIN_OBJ)
-	$(CC) $^ $(LIBS)  -lgfortran -lpthread  $(CFLAGS) -o $@
+	$(CC) $^ $(LIBS) -L$(LIBPATHS) $(CFLAGS) -o $@
 
 $(OBJDIR)/read_blocksize_test.x: bin/test/read_blocksize_test.o $(NON_MAIN_OBJ)
-	$(CC) $^ $(LIBS)  -lgfortran -lpthread  $(CFLAGS) -o $@
+	$(CC) $^ $(LIBS) -L$(LIBPATHS) $(CFLAGS) -o $@
 
 $(OBJDIR)/write_test.x: bin/test/write_test.o $(NON_MAIN_OBJ)
-	$(CC) $^ $(LIBS)  -lgfortran -lpthread  $(CFLAGS) -o $@
+	$(CC) $^ $(LIBS) -L$(LIBPATHS) $(CFLAGS) -o $@
 
 $(OBJDIR)/write_blocksize_test.x: bin/test/write_blocksize_test.o $(NON_MAIN_OBJ)
-	$(CC) $^ $(LIBS)  -lgfortran -lpthread  $(CFLAGS) -o $@
+	$(CC) $^ $(LIBS) -L$(LIBPATHS)  $(CFLAGS) -o $@
 
 $(OBJDIR)/write_h_file.x: bin/src/write_h_file.o
 	$(CC) $^ $(CFLAGS) -o $@
@@ -64,7 +69,7 @@ write_h_file: $(OBJDIR)/write_h_file.x
 bin/src/driver.o: src/driver.c src/fgls.h src/io.h src/fgls_eigen.h
 bin/src/eigenDec.o: src/eigenDec.c src/blas.h src/lapack.h
 bin/src/fgls.o: src/fgls.c src/fgls.h src/io.h
-bin/src/fgls_eigen.o: src/fgls_eigen.c src/fgls.h src/io.h src/mod_x_y.h
+bin/src/fgls_eigen.o: src/fgls_eigen.c src/fgls.h src/io.h
 bin/src/io.o: src/io.c src/io.h src/fgls.h
 bin/src/mod_x_y.o: src/mod_x_y.c src/fgls.h src/io.h src/options.h
 bin/src/write_h_file.o: src/write_h_file.c
