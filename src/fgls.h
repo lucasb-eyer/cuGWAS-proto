@@ -3,13 +3,14 @@
 
 #define DEBUG 0
 #define TIMING 0
+#define VAMPIR 1
 
 #include <stdio.h>
 
-#if TIMING
+/*#if TIMING*/
 #include <sys/time.h>
 #include <time.h>
-#endif // TIMING
+/*#endif // TIMING*/
 
 #if TIMING
 #define BEGIN_TIMING() \
@@ -96,8 +97,8 @@ FGLS_eigen_t FGLS_eigen_config;
 /*int id;*/
 /*} problem_args;*/
 
-#if TIMING
 long get_diff_ms(struct timeval *s, struct timeval *e);
+#if TIMING
 long get_diff_us(struct timeval *s, struct timeval *e);
 long get_diff_ns(struct timespec *s, struct timespec *e);
 #endif // TIMING

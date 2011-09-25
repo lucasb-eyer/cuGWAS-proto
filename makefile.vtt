@@ -4,11 +4,11 @@ SRCDIR=src
 TESTDIR=test
 INCDIR=include
 #CC=gcc
-CC=icc
+#CC=icc
 CFLAGS=-I$(SRCDIR)/ -I$(TESTDIR)/ -I.
 
-#CC=vtcc
-#CFLAGS+= -g -DVTRACE -vt:mt -vt:inst manual -pthread -vt:verbose
+CC=vtcc
+CFLAGS+= -g -DVTRACE -vt:mt -vt:inst manual -pthread -vt:verbose
 
 #LIBS=$(LDDIR)/lapack_LINUX.a $(LDDIR)/libgoto2_penrynp-r1.07.a
 #LIBS=$(LDDIR)/lapack_LINUX.a $(LDDIR)/libgoto2.a -lgfortran -lpthread

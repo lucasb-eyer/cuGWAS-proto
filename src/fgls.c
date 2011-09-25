@@ -16,19 +16,19 @@ double compare(double* a, double* b, int size) {
   int i;
   for (i = 0; i < size; i++) {
     if((i % 1000) == 0 && fabs(a[i] - b[i]) > 1e-13)
-		printf("Difference at %d: %e\n", i, fabs(a[i] - b[i]));
+		printf("Difference at %d: %e [%f - %f]\n", i, fabs(a[i] - b[i]), a[i], b[i]);
     if(out < fabs(a[i] - b[i]))
       out = fabs(a[i] - b[i]);
   }
   return out;
 }
 
-#if TIMING
 long get_diff_ms(struct timeval *start_time, struct timeval *end_time) {
   long seconds = end_time->tv_sec - start_time->tv_sec;
   long useconds = end_time->tv_usec - start_time->tv_usec;
   return ((seconds) * 1000 + useconds/1000.0) +0.5;
 }
+#if TIMING
 long get_diff_us(struct timeval *start_time, struct timeval *end_time) {
   long seconds = end_time->tv_sec - start_time->tv_sec;
   long useconds = end_time->tv_usec - start_time->tv_usec;
