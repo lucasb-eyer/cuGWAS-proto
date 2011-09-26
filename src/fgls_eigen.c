@@ -24,34 +24,32 @@ void swap_aiocb(const struct aiocb *x[], const struct aiocb *y[])
 }
 
 typedef struct {
-	FILE *X_fp;
+	FILE *XR_fp;
 	FILE *Y_fp;
 	FILE *B_fp;
+	double *XL[2];
+	double *XL_b;
+	double *XLtXL;
 
 	double *X[NUM_BUFFERS_PER_THREAD];
 	double *Y[NUM_BUFFERS_PER_THREAD];
 	double *B[NUM_BUFFERS_PER_THREAD];
 
 	double *h;
+	double *sigma;
 	double *W;
 	double *Winv;
 	double *xtSx;
+
+	FGLS_eigen_t *cf;
 
 	int id;
 } ooc_loops_t;
 
 
-void write_all_b( double *buff, FILE *fp, int i, int j, FGLS_eigen_t *cf) {
-	int it;
-	/*printf("Write all: %d %d\n", i, j);*/
-	for ( it = 0; it < MIN( cf->NUM_COMPUTE_THREADS, cf->t - j ); it++ )
-	{
-		/*printf("IO THREAD Writes from B[%d] to File[%d]: %d\n", it * cf->x_b * cf->p, (j + it) * (cf->m * cf->p) + i * cf->p, buff[ it * cf->x_b * cf->p ]); */
-        write( &buff[ it * cf->x_b * cf->p ], fp, 
-				MIN( cf->x_b * cf->p, (cf->m - i) * cf->p),
-				(j + it) * (cf->m * cf->p) + i * cf->p);
-	}
-}
+/*write( &buff[ it * cf->x_b * cf->p ], fp, */
+/*MIN( cf->x_b * cf->p, (cf->m - i) * cf->p),*/
+/*(j + it) * (cf->m * cf->p) + i * cf->p);*/
 
 /*read( y_cur, loops_t->Y_fp, */
 /*j + cf->NUM_COMPUTE_THREADS > t ? 0 : MIN( cf->NUM_COMPUTE_THREADS * n, (t - (j + cf->NUM_COMPUTE_THREADS)) * n ), */
@@ -72,16 +70,22 @@ void* compute_thread_func(void* in)
 	  n = cf->n,
 	  p = cf->p,
 	  t = cf->t,
+	  wXL = cf->wXL,
+	  wXR = cf->wXR,
 	  x_b = cf->x_b,
 	  id = loops_t->id;
 
-  double *x_cur  = &loops_t->X[0][id * n * p * x_b];
-  double *x_next = &loops_t->X[1][id * n * p * x_b];
+  double *xl     = &loops_t->XL[1][id * wXL * n];
+  double *xl_b   = &loops_t->XL_b[id * wXL];
+  double *xltxl  = &loops_t->XLtXL[id * wXL * wXL];
+  double *x_cur  = &loops_t->X[0][id * n * wXR * x_b];
+  double *x_next = &loops_t->X[1][id * n * wXR * x_b];
   double *y_cur  = &loops_t->Y[0][id * n];
   double *y_next = &loops_t->Y[1][id * n];
   double *b_cur  = &loops_t->B[0][id * p * x_b];
   double *b_prev = &loops_t->B[1][id * p * x_b];
   double *h      =  loops_t->h;
+  double *sigma  =  loops_t->sigma;
   double *W      =  loops_t->W;
 
   double *Winv = &loops_t->Winv[id * n];
@@ -116,9 +120,9 @@ void* compute_thread_func(void* in)
   bzero( (char *)&aiocb_b_prev, sizeof(struct aiocb) );
   bzero( (char *)&aiocb_b_cur,  sizeof(struct aiocb) );
 
-  aiocb_x_cur.aio_fildes = fileno( loops_t->X_fp );
+  aiocb_x_cur.aio_fildes = fileno( loops_t->XR_fp );
   aiocb_x_cur.aio_buf = x_cur;
-  aiocb_x_cur.aio_nbytes = MIN( x_b, m ) * p * n * sizeof(double);
+  aiocb_x_cur.aio_nbytes = MIN( x_b, m ) * wXR * n * sizeof(double);
   aiocb_x_cur.aio_offset = 0;
   /*aiocb_x_cur.aio_flag = AIO_RAW;*/
   aio_read( &aiocb_x_cur );
@@ -130,7 +134,7 @@ void* compute_thread_func(void* in)
   /*aiocb_y_cur.aio_flag = AIO_RAW;*/
   aio_read( &aiocb_y_cur );
 
-  aiocb_x_next.aio_fildes = fileno( loops_t->X_fp );
+  aiocb_x_next.aio_fildes = fileno( loops_t->XR_fp );
   /*aiocb_x_next.aio_flag = AIO_RAW;*/
   aiocb_x_next.aio_buf = x_next;
   aiocb_y_next.aio_fildes = fileno( loops_t->Y_fp );
@@ -164,6 +168,7 @@ void* compute_thread_func(void* in)
 	/*printf("Nbytes: %d\n",  aiocb_y_next_p->aio_nbytes);*/
     aio_read( aiocb_y_next_p );
 
+	memcpy( xl, loops_t->XL[0], wXL * n * sizeof(double) );
 #if VAMPIR
     VT_USER_START("WAIT_Y");
 #endif
@@ -180,8 +185,8 @@ void* compute_thread_func(void* in)
 #if VAMPIR
     VT_USER_START("COMP_LOOP_Y_CODE");
 #endif
-  	alpha = h[j] * h[j];
-	beta  = 1 - alpha;
+  	alpha = sigma[j] * h[j]; // * h[j];
+	beta  = sigma[j] * (1 - h[j]); // * h[j]);
 
     BEGIN_TIMING();
     /* 2) W = sqrt(alpha W - beta I)^-1 */
@@ -197,6 +202,17 @@ void* compute_thread_func(void* in)
 	/*printf("K(1, %2d)        = %8f\n", j+1, y_cur[0]);*/
 	/*printf("K(500, %2d)      = %8f\n", j+1, y_cur[499]);*/
 
+      /* sqrt(Winv) * Z' * XL */
+	  int k2;
+	  for ( k = 0; k < wXL; k++ )
+		  for ( k2 = 0; k2 < n; k2++ )
+			  xl[ k * n + k2 ] *= Winv[k2];
+	  /*printf("W(1, 1)         = %8f\n", x_cur[0]);*/
+	  /*printf("W(500, 3000)    = %8f\n", x_cur[x_b*n*p-1]);*/
+      
+      /* 7) b = sqrt(Winv) * ZtXL * y */
+      dgemv_("T", &n, &wXL, &ONE, xl, &n, y_cur, &iONE, &ZERO, xl_b, &iONE);
+
     END_TIMING(cf->time->compute_time);
 #if VAMPIR
     VT_USER_END("COMP_LOOP_Y_CODE");
@@ -210,10 +226,10 @@ void* compute_thread_func(void* in)
         bzero( (char *)aiocb_x_next_p,  sizeof(struct aiocb) );
 
         aiocb_x_next_p->aio_buf = x_next;
-	    aiocb_x_next_p->aio_fildes = fileno( loops_t->X_fp );
+	    aiocb_x_next_p->aio_fildes = fileno( loops_t->XR_fp );
 
-		aiocb_x_next_p->aio_nbytes = (ib + x_b) >= m ? MIN( x_b, m ) * p * n * sizeof(double) : MIN( x_b * p * n, (m - (ib + x_b)) * p * n ) * sizeof(double);
-		aiocb_x_next_p->aio_offset = (ib + x_b) >= m ? 0 : (ib + x_b) * p * n * sizeof(double);
+		aiocb_x_next_p->aio_nbytes = (ib + x_b) >= m ? MIN( x_b, m ) * wXR * n * sizeof(double) : MIN( x_b * wXR * n, (m - (ib + x_b)) * wXR * n ) * sizeof(double);
+		aiocb_x_next_p->aio_offset = (ib + x_b) >= m ? 0 : (ib + x_b) * wXR * n * sizeof(double);
 		/*aiocb_x.aio_flag = AIO_RAW;*/
 		aio_read( aiocb_x_next_p );
 #if VAMPIR
@@ -237,30 +253,59 @@ void* compute_thread_func(void* in)
 	  mpb = p * x_b;
 	  mpb_real = p * x_inc;
 
-      /* sqrt(Winv) * Z' * X */
+      /* sqrt(Winv) * Z' * XR */
 	  int k2;
-	  for ( k = 0; k < mpb_real; k++ )
+	  for ( k = 0; k < x_inc*wXR; k++ )
 		  for ( k2 = 0; k2 < n; k2++ )
 			  x_cur[ k * n + k2 ] *= Winv[k2];
 	  /*printf("W(1, 1)         = %8f\n", x_cur[0]);*/
-	  /*printf("W(500, 3000)    = %8f\n", x_cur[x_b*n*p-1]);*/
+	  /*printf("W(%d, %d)    = %8f\n", n, x_b*wXR, x_cur[x_b*n*wXR-1]);*/
       
       /* 7) b = WinvZtX * y */
-      dgemv_("T", &n, &mpb_real, &ONE, x_cur, &n, y_cur, &iONE, &ZERO, b_cur, &iONE);
+	  /*dgemv_("T", &n, &mpb_real, &ONE, x_cur, &n, y_cur, &iONE, &ZERO, b_cur, &iONE);*/
 	  /*printf("RHS(1, %2d)      = %8f\n", j+1, b_cur[0]);*/
 	  /*printf("RHS(3000, %2d)   = %8f\n", j+1, b_cur[2999]);*/
       
+	  /*dsyrk_("L", "T", &p, &n, &ONE, &x_cur[i*p*n], &n, &ZERO, xtSx, &p);*/
+		dsyrk_("L", "T", // LOWER, NO_TRANS, 
+				&wXL, &n, // n, k
+				&ONE, xl, &n, // KL KL' 
+				&ZERO, xltxl, &wXL); // TL of xtSx
+
       for (i = 0; i < x_inc; i++)
       {
+		  int k;
+		  memcpy(&b_cur[i*p], xl_b, wXL * sizeof(double));
+		  /*printf("DGEMV( T, %d, %d, %2f, %p, %d, %p, %d, %2f, %p, %d);\n",*/
+		  /*n, wXR, ONE, &x_cur[i * wXR * n], n, y_cur, iONE, ZERO, b_cur[i*p + wXL], iONE);*/
+          dgemv_("T", 
+				  &n, &wXR, 
+				  &ONE, &x_cur[i * wXR * n], &n, y_cur, &iONE, 
+				  &ZERO, &b_cur[i*p + wXL], &iONE);
+		  /*printf("RHS(%2d, %2d)    = %8f\n", (ib+i)*p+1,   j+1, b_cur[(ib+i)*p]);*/
+		  /*printf("RHS(%2d, %2d)    = %8f\n", (ib+i+1)*p, j+1, b_cur[(ib+i+1)*p-1]);*/
 		  /*printf("Thread: %d - Iterating X(%d) - Solving\n", id, i);*/
         /* 5) W = XtZWinv * K^T */
-        dsyrk_("L", "T", &p, &n, &ONE, &x_cur[i*p*n], &n, &ZERO, xtSx, &p);
+		for( k = 0; k < wXL; k++ )
+			dcopy_(&wXL, &xltxl[k*wXL], &iONE, &xtSx[k*p], &iONE);
+        dsyrk_("L", "T", 
+				&wXR, &n, 
+				&ONE, &x_cur[i * wXR * n], &n, 
+				&ZERO, &xtSx[wXL * p + wXL], &p);
+		dgemm_("T", "N", // NO_TRANS, TRANS, 
+				&wXR, &wXL, &n, // m, n, k
+				&ONE, &x_cur[i * wXR * n], &n, xl, &n, // KR KL'
+				&ZERO, &xtSx[wXL], &p); // xtSx BL
 
+		/*printf("%8f %8f %8f %8f\n", xtSx[0], xtSx[4], xtSx[8], xtSx[12]);*/
+		/*printf("%8f %8f %8f %8f\n", xtSx[1], xtSx[5], xtSx[9], xtSx[13]);*/
+		/*printf("%8f %8f %8f %8f\n", xtSx[2], xtSx[6], xtSx[10], xtSx[14]);*/
+		/*printf("%8f %8f %8f %8f\n", xtSx[3], xtSx[7], xtSx[11], xtSx[15]);*/
         /* 8) W^-1 * y */
         dposv_("L", &p, &iONE, xtSx, &p, &b_cur[i*p], &p, &info);
         if (info != 0)
         {
-          fprintf(stderr, "Error executing dposv (y: %d, x: %d, th: %d): %d\n", j, i, id, info);
+          fprintf(stderr, "Error executing dposv (y: %d, x: %d, th: %d): %d\n", j, ib+i, id, info);
           exit(-1);
         }
 		/*if ( i== 0) printf("res[%d, %2d]: %f\n", ib+i, j, *b_cur);*/
@@ -322,7 +367,8 @@ int fgls_eigen( FGLS_eigen_t *cf )
 		 *Z,
 		 *W;
   FILE *Phi_fp,
-	   *h_fp;
+	   *h_fp, *sigma_fp,
+	   *XL_fp;
   ooc_loops_t loops_t;
   ooc_loops_t *loops_t_comp;
 
@@ -340,8 +386,15 @@ int fgls_eigen( FGLS_eigen_t *cf )
     loops_t.Y[i] = ( double* ) malloc ( cf->NUM_COMPUTE_THREADS * cf->n * sizeof(double) );
     loops_t.B[i] = ( double* ) malloc ( cf->NUM_COMPUTE_THREADS * cf->x_b * cf->p * sizeof(double) );
   }
+  // The original in XL[0]
+  // The copy to overwrite in XL[1]
+  loops_t.XL[0] = ( double* ) malloc ( cf->wXL * cf->n * sizeof(double) );
+  loops_t.XL[1] = ( double* ) malloc ( cf->NUM_COMPUTE_THREADS * cf->wXL * cf->n * sizeof(double) );
+  loops_t.XL_b  = ( double* ) malloc ( cf->NUM_COMPUTE_THREADS * cf->wXL * sizeof(double) );
+  loops_t.XLtXL = ( double* ) malloc ( cf->NUM_COMPUTE_THREADS * cf->wXL * cf->wXL * sizeof(double) );
 
   loops_t.h = ( double* ) malloc ( cf->t * sizeof(double) );
+  loops_t.sigma = ( double* ) malloc ( cf->t * sizeof(double) );
   Phi = ( double* ) malloc ( cf->n * cf->n * sizeof(double) );
   loops_t.W = ( double* ) malloc ( cf->n * sizeof(double) );
   Z   = ( double* ) malloc ( cf->n * cf->n * sizeof(double) );
@@ -369,9 +422,13 @@ int fgls_eigen( FGLS_eigen_t *cf )
 #if VAMPIR
   VT_USER_END("PRELOOP");
 #endif
-  loops_t.X_fp = fopen( cf->ZtX_path, "rb");
+  loops_t.XR_fp = fopen( cf->ZtXR_path, "rb");
   loops_t.Y_fp = fopen( cf->ZtY_path, "rb");
   loops_t.B_fp = fopen( cf->B_path, "wb");
+
+  XL_fp = fopen( cf->ZtXL_path, "rb" );
+  read( loops_t.XL[0], XL_fp, cf->wXL * cf->n, 0 );
+  fclose( XL_fp );
   /*if(!x_file) {*/
   /*printf("error opening x_file(%s)! exiting...\n", str_buf);*/
   /*exit(-1);*/
@@ -385,6 +442,9 @@ int fgls_eigen( FGLS_eigen_t *cf )
   h_fp = fopen( cf->h_path, "r");
   read(loops_t.h, h_fp, cf->t, 0);
   fclose( h_fp );
+  sigma_fp = fopen( cf->sigma_path, "r");
+  read(loops_t.sigma, sigma_fp, cf->t, 0);
+  fclose( sigma_fp );
 
   printf("LOOPS\n");
 
@@ -412,7 +472,7 @@ int fgls_eigen( FGLS_eigen_t *cf )
 
   printf("LOOPS Done\n");
 
-  fclose( loops_t.X_fp );
+  fclose( loops_t.XR_fp );
   fclose( loops_t.Y_fp );
   fclose( loops_t.B_fp );
 
@@ -422,7 +482,13 @@ int fgls_eigen( FGLS_eigen_t *cf )
 	  free( loops_t.Y[i] );
 	  free( loops_t.B[i] );
   }
+  free( loops_t.XL[0] );
+  free( loops_t.XL[1] );
+  free( loops_t.XL_b  );
+  free( loops_t.XLtXL );
+
   free( loops_t.h );
+  free( loops_t.sigma );
   free( loops_t.W );
 
   free( loops_t.Winv );

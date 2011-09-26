@@ -17,25 +17,14 @@ int main( int argc, char *argv[] )
 
   dir = argv[1];
   printf("Please enter parameters\n");
-  printf("\tm: ");
-  scanf("%d", &cf->m);
-  printf("\tt: ");
-  scanf("%d", &cf->t);
-  printf("\tm blocksize: ");
-  scanf("%d", &cf->x_b);
-  // Still needed for OOC gemm
-  /*printf("\tt blocksize: ");*/
-  /*scanf("%d", &cf->y_b);*/
-  printf("\tn: ");
-  scanf("%d", &cf->n);
-  printf("\tp: ");
-  scanf("%d", &cf->p);
-  printf("\tcompute threads: ");
-  scanf("%d", &cf->NUM_COMPUTE_THREADS);
-
-  /*in.m_indexed = (int) ((double) in.m/in.x_b+.5);*/
-  /*in.t_indexed = (int) ((double) in.t/in.y_b+.5);*/
-  /*in.NUM_BUFFERS_PER_THREAD = 2;*/
+  printf("n: ");                 scanf("%d", &cf->n);
+  printf("p: ");                 scanf("%d", &cf->p);
+  printf("m: ");                 scanf("%d", &cf->m);
+  printf("t: ");                 scanf("%d", &cf->t);
+  printf("width of XL: ");       scanf("%d", &cf->wXL);
+  printf("x_b: ");               scanf("%d", &cf->x_b);
+  printf("# compute threads: "); scanf("%d", &cf->NUM_COMPUTE_THREADS);
+  cf->wXR = cf->p - cf->wXL;
 
 #if TIMING
   cf->time = (timing*)malloc(sizeof(timing));
@@ -43,13 +32,16 @@ int main( int argc, char *argv[] )
   gettimeofday(&start, NULL);
 #endif // TIMING
 
-  sprintf(cf->X_path,   "%s/X.in", dir);
-  sprintf(cf->ZtX_path, "%s/X.tmp", dir);
-  sprintf(cf->Y_path,   "%s/Y.in", dir);
-  sprintf(cf->ZtY_path, "%s/Y.tmp", dir);
-  sprintf(cf->Phi_path, "%s/Phi.in", dir);
-  sprintf(cf->h_path,   "%s/H.in", dir);
-  sprintf(cf->B_path,   "%s/B.out", dir);
+  sprintf(cf->XR_path,   "%s/XR.in", dir);
+  sprintf(cf->XL_path,   "%s/XL.in", dir);
+  sprintf(cf->ZtXL_path, "%s/XL.tmp", dir);
+  sprintf(cf->ZtXR_path, "%s/XR.tmp", dir);
+  sprintf(cf->Y_path,    "%s/Y.in", dir);
+  sprintf(cf->ZtY_path,  "%s/Y.tmp", dir);
+  sprintf(cf->Phi_path,  "%s/Phi.in", dir);
+  sprintf(cf->h_path,    "%s/H.in", dir);
+  sprintf(cf->sigma_path,"%s/Sig.in", dir);
+  sprintf(cf->B_path,    "%s/B.out", dir);
 
   fgls_eigen( cf );
 
@@ -80,24 +72,16 @@ int main( int argc, char *argv[] )
   double max;
   read(b_mine, b_mine_f, cf->p*cf->m*cf->t, 0);
   read(b_exp, b_exp_f, cf->p*cf->m*cf->t, 0);
-  printf("out[0]: %12e\n", b_mine[0]);
-  printf("exp[0]: %12e\n", b_exp[0]);
-  printf("out[1]: %12e\n", b_mine[1]);
-  printf("exp[1]: %12e\n", b_exp[1]);
-  /*printf("out[2]: %12e\n", b_mine[2]);*/
-  /*printf("exp[2]: %12e\n", b_exp[2]);*/
-  /*printf("out[3]: %12e\n", b_mine[3]);*/
-  /*printf("exp[3]: %12e\n", b_exp[3]);*/
-  /*printf("out[4]: %12e\n", b_mine[4]);*/
-  /*printf("exp[4]: %12e\n", b_exp[4]);*/
-  /*printf("out[400]: %12e\n", b_mine[400]);*/
-  /*printf("exp[400]: %12e\n", b_exp[400]);*/
-  printf("out[3000]: %12e\n", b_mine[3000]);
-  printf("exp[3000]: %12e\n", b_exp[3000]);
-  printf("out[6000]: %12e\n", b_mine[6000]);
-  printf("exp[6000]: %12e\n", b_exp[6000]);
-  printf("out[9000]: %12e\n", b_mine[9000]);
-  printf("exp[9000]: %12e\n", b_exp[9000]);
+  /*printf("out[0]: %12e\n", b_mine[0]);*/
+  /*printf("exp[0]: %12e\n", b_exp[0]);*/
+  /*printf("out[1]: %12e\n", b_mine[1]);*/
+  /*printf("exp[1]: %12e\n", b_exp[1]);*/
+  /*printf("out[3000]: %12e\n", b_mine[3000]);*/
+  /*printf("exp[3000]: %12e\n", b_exp[3000]);*/
+  /*printf("out[6000]: %12e\n", b_mine[6000]);*/
+  /*printf("exp[6000]: %12e\n", b_exp[6000]);*/
+  /*printf("out[9000]: %12e\n", b_mine[9000]);*/
+  /*printf("exp[9000]: %12e\n", b_exp[9000]);*/
   max = compare(b_mine, b_exp, cf->m*cf->p*cf->t);
   printf("Max elemental diff: %lf\n", max);
 #endif // DEBUG

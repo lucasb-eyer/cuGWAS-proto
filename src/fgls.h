@@ -67,18 +67,23 @@ typedef struct timing_t {
 
 typedef struct
 {
-  char X_path[STR_BUFFER_SIZE];
-  char ZtX_path[STR_BUFFER_SIZE];
+  char XL_path[STR_BUFFER_SIZE];
+  char XR_path[STR_BUFFER_SIZE];
+  char ZtXL_path[STR_BUFFER_SIZE];
+  char ZtXR_path[STR_BUFFER_SIZE];
   char Y_path[STR_BUFFER_SIZE];
   char ZtY_path[STR_BUFFER_SIZE];
   char Phi_path[STR_BUFFER_SIZE];
   char h_path[STR_BUFFER_SIZE];
+  char sigma_path[STR_BUFFER_SIZE];
   char B_path[STR_BUFFER_SIZE];
 
   int n;
-  int p;
+  int p; // total width of X
   int m;
   int t;
+  int wXL; // width of XL
+  int wXR; // width of XR
   int x_b;
   /*int y_b;*/
 
