@@ -1,5 +1,5 @@
 #include "fgls.h"
-#include "io.h"
+/*#include "io.h"*/
 #include "fgls_eigen.h"
 
 #include <malloc.h>
@@ -70,8 +70,8 @@ int main( int argc, char *argv[] )
     return -1;
   }
   double max;
-  read(b_mine, b_mine_f, cf->p*cf->m*cf->t, 0);
-  read(b_exp, b_exp_f, cf->p*cf->m*cf->t, 0);
+  my_read(b_mine, b_mine_f, cf->p*cf->m*cf->t, 0);
+  my_read(b_exp, b_exp_f, cf->p*cf->m*cf->t, 0);
   /*printf("out[0]: %12e\n", b_mine[0]);*/
   /*printf("exp[0]: %12e\n", b_exp[0]);*/
   /*printf("out[1]: %12e\n", b_mine[1]);*/

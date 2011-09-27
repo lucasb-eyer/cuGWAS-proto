@@ -1,8 +1,10 @@
 #include "fgls.h"
-#include "io.h"
+/*#include "io.h"*/
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <math.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <aio.h>
@@ -174,7 +176,7 @@ void* compute_thread_func(void* in)
 #endif
 	if ( aio_suspend( aiocb_y_cur_l, 1, NULL ) != 0 )
 		fprintf(stderr, "Suspend error\n");
-	/*printf("Return value: %d\n", aio_return(aiocb_y_cur_l[0]));*/
+	/*printf("Return value: %d\n", aio_return((struct aiocb *)aiocb_y_cur_l[0]));*/
 #if VAMPIR
     VT_USER_END("WAIT_Y");
 #endif
@@ -412,7 +414,7 @@ int fgls_eigen( FGLS_eigen_t *cf )
   VT_USER_START("PRELOOP");
 #endif
   Phi_fp = fopen( cf->Phi_path, "rb" );
-  read( Phi, Phi_fp, cf->n * cf->n, 0 );
+  my_read( Phi, Phi_fp, cf->n * cf->n, 0 );
   setenv("OMP_NUM_THREADS", "7", 1);
   preloop(Phi, Z, loops_t.W);
   setenv("OMP_NUM_THREADS", "1", 1);
@@ -427,7 +429,7 @@ int fgls_eigen( FGLS_eigen_t *cf )
   loops_t.B_fp = fopen( cf->B_path, "wb");
 
   XL_fp = fopen( cf->ZtXL_path, "rb" );
-  read( loops_t.XL[0], XL_fp, cf->wXL * cf->n, 0 );
+  my_read( loops_t.XL[0], XL_fp, cf->wXL * cf->n, 0 );
   fclose( XL_fp );
   /*if(!x_file) {*/
   /*printf("error opening x_file(%s)! exiting...\n", str_buf);*/
@@ -440,10 +442,10 @@ int fgls_eigen( FGLS_eigen_t *cf )
   VT_USER_START("LOOPS");
 #endif
   h_fp = fopen( cf->h_path, "r");
-  read(loops_t.h, h_fp, cf->t, 0);
+  my_read(loops_t.h, h_fp, cf->t, 0);
   fclose( h_fp );
   sigma_fp = fopen( cf->sigma_path, "r");
-  read(loops_t.sigma, sigma_fp, cf->t, 0);
+  my_read(loops_t.sigma, sigma_fp, cf->t, 0);
   fclose( sigma_fp );
 
   printf("LOOPS\n");

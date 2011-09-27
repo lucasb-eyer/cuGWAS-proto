@@ -1,9 +1,9 @@
 #ifndef FGLS_H
 #define FGLS_H
 
-#define DEBUG 0
+#define DEBUG 1
 #define TIMING 0
-#define VAMPIR 1
+#define VAMPIR 0
 
 #include <stdio.h>
 
@@ -92,7 +92,7 @@ typedef struct
 
 #if TIMING
   timing* time;
-#endif TIMING
+#endif // TIMING
 
 } FGLS_eigen_t;
 

@@ -84,7 +84,7 @@ void* ooc_gemm_io( void *in )
   /*printf("io n: %d\n", n);*/
   /*printf("io k: %d\n", k);*/
   BEGIN_TIMING();
-  read( in_cur, gemm_t->fp_in, MIN( max_elems, k * n ), 0 );
+  my_read( in_cur, gemm_t->fp_in, MIN( max_elems, k * n ), 0 );
   END_TIMING(cf->time->io_time);
 
   sem_post( &gemm_t->sem_comp );
@@ -99,7 +99,7 @@ void* ooc_gemm_io( void *in )
     swap_buffers(&in_cur, &in_next);
     
     BEGIN_TIMING();
-    read( in_cur, gemm_t->fp_in, 
+    my_read( in_cur, gemm_t->fp_in, 
 			i + cols_per_buff > n ? 0 : MIN( max_elems, ( n - ( i + cols_per_buff ) ) * k ), 
 			(i + cols_per_buff) * k );
     END_TIMING(cf->time->io_time);
@@ -113,7 +113,7 @@ void* ooc_gemm_io( void *in )
     BEGIN_TIMING();
 	/*printf("Writing: %f\n", out_prev[0]);*/
 	/*printf("Writing: %f\n", out_prev[MIN( max_elems, (n - i) * m )-1]);*/
-    write( out_prev, gemm_t->fp_out, MIN( max_elems, (n - i) * m ), i * m);
+    my_write( out_prev, gemm_t->fp_out, MIN( max_elems, (n - i) * m ), i * m);
 	/*fflush( gemm_t->fp_out );*/
     END_TIMING(cf->time->io_time);
     swap_buffers( &out_prev, &out_cur );
