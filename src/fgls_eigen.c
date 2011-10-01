@@ -1,22 +1,33 @@
-#include "fgls.h"
-/*#include "io.h"*/
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+
+#include <sys/time.h>
+#include <time.h>
+
 #include <pthread.h>
 #include <semaphore.h>
 #include <aio.h>
 
-#include <sys/time.h>
-#include <time.h>
+#include "blas.h"
+#include "lapack.h"
+#include "io.h"
+#include "timing.h"
+#include "fgls_eigen.h"
 
 #if VAMPIR
   #include "vt_user.h"
 #endif
 
 #define NUM_BUFFERS_PER_THREAD 2
+
+void swap_buffers(double** b1, double** b2) {
+  double* temp;
+  temp = *b1;
+  *b1 = *b2;
+  *b2 = temp;
+}
 
 void swap_aiocb(const struct aiocb *x[], const struct aiocb *y[])
 {
@@ -48,18 +59,6 @@ typedef struct {
 	int id;
 } ooc_loops_t;
 
-
-/*write( &buff[ it * cf->x_b * cf->p ], fp, */
-/*MIN( cf->x_b * cf->p, (cf->m - i) * cf->p),*/
-/*(j + it) * (cf->m * cf->p) + i * cf->p);*/
-
-/*read( y_cur, loops_t->Y_fp, */
-/*j + cf->NUM_COMPUTE_THREADS > t ? 0 : MIN( cf->NUM_COMPUTE_THREADS * n, (t - (j + cf->NUM_COMPUTE_THREADS)) * n ), */
-/*j + cf->NUM_COMPUTE_THREADS > t ? 0 : (j + cf->NUM_COMPUTE_THREADS) * n );*/
-
-/*read( x_cur, loops_t->X_fp, */
-/*(i + x_b) >= m ? MIN( x_b * n * p, m * p * n ) : MIN( x_b * n * p, (m - (i + x_b)) * p * n ), */
-/*(i + x_b) >= m ? 0 : (i + x_b) * p * n );*/
 
 void* compute_thread_func(void* in) 
 {
@@ -414,7 +413,7 @@ int fgls_eigen( FGLS_eigen_t *cf )
   VT_USER_START("PRELOOP");
 #endif
   Phi_fp = fopen( cf->Phi_path, "rb" );
-  my_read( Phi, Phi_fp, cf->n * cf->n, 0 );
+  sync_read( Phi, Phi_fp, cf->n * cf->n, 0 );
   setenv("OMP_NUM_THREADS", "7", 1);
   preloop(Phi, Z, loops_t.W);
   setenv("OMP_NUM_THREADS", "1", 1);
@@ -429,7 +428,7 @@ int fgls_eigen( FGLS_eigen_t *cf )
   loops_t.B_fp = fopen( cf->B_path, "wb");
 
   XL_fp = fopen( cf->ZtXL_path, "rb" );
-  my_read( loops_t.XL[0], XL_fp, cf->wXL * cf->n, 0 );
+  sync_read( loops_t.XL[0], XL_fp, cf->wXL * cf->n, 0 );
   fclose( XL_fp );
   /*if(!x_file) {*/
   /*printf("error opening x_file(%s)! exiting...\n", str_buf);*/
@@ -442,10 +441,10 @@ int fgls_eigen( FGLS_eigen_t *cf )
   VT_USER_START("LOOPS");
 #endif
   h_fp = fopen( cf->h_path, "r");
-  my_read(loops_t.h, h_fp, cf->t, 0);
+  sync_read(loops_t.h, h_fp, cf->t, 0);
   fclose( h_fp );
   sigma_fp = fopen( cf->sigma_path, "r");
-  my_read(loops_t.sigma, sigma_fp, cf->t, 0);
+  sync_read(loops_t.sigma, sigma_fp, cf->t, 0);
   fclose( sigma_fp );
 
   printf("LOOPS\n");

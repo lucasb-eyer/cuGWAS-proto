@@ -1,36 +1,32 @@
-#include "io.h"
 #include <stdio.h>
-#include <error.h>
-#include <errno.h>
 
-void my_write(double* buffer, FILE* fp, size_t size, size_t start) {
+#include "io.h"
+
+void sync_read(double *buffer, FILE* fp, size_t size, size_t start) 
+{
+	size_t out;
+
 	fseek(fp, start*sizeof(double), SEEK_SET);
-	/*printf("Writing: %f at position %d\n", buffer[0], start);*/
-	size_t out = fwrite(buffer, sizeof(double), size, fp);
-	if(out != size) {
-		printf("error: actual write size(%d) != proposed write size(%d)\n", (int)out, (int)size);
+	out = fread(buffer, sizeof(double), size, fp);
+	if ( out != size )
+	{
+		printf("[ERROR] "__FILE__ ": Read %d elements - %d expected\n", (int)out, (int)size);
 	}
+
 	return; 
 }
 
+void sync_write(double* buffer, FILE* fp, size_t size, size_t start) 
+{
+	size_t out;
 
-void my_read(double *buffer, FILE* fp, size_t size, size_t start) {
-	/*printf("Reading %d bytes at %d (%p)\n", (int)size*sizeof(double), (int)start, buffer);*/
-	fseek(fp, start*sizeof(double), SEEK_SET);
-	size_t out = fread(buffer, sizeof(double), size, fp);
-	if(out != size) {
-		printf("ERROR: %s\n", strerror(errno));
-		printf("start: %d\n", (int)start);
-		printf("error: actual read size(%d) != proposed read size(%d)\n", (int)out, (int)size);
+	fseek(fp, start * sizeof(double), SEEK_SET);
+	out = fwrite(buffer, sizeof(double), size, fp);
+	if ( out != size ) 
+	{
+		printf("[ERROR] "__FILE__ ": Wrote %d elements - %d expected\n", (int)out, (int)size);
 	}
+
 	return; 
 }
-
-/*void print_buffer(double *buffer, int items) {*/
-/*int i;*/
-/*for(i = 0; i < items; i++) {*/
-/*printf("%f\t", buffer[i]);*/
-/*}*/
-/*printf("\n");*/
-/*}*/
 

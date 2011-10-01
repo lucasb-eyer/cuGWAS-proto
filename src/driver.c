@@ -1,18 +1,24 @@
-#include "fgls.h"
-/*#include "io.h"*/
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+
+#include "io.h"
+#include "timing.h"
 #include "fgls_eigen.h"
 
-#include <malloc.h>
-#include <stdio.h>
+double compare(double *a, double *b, int size);
 
 int main( int argc, char *argv[] ) 
 {
   char *dir;
   FGLS_eigen_t *cf = &FGLS_eigen_config;
 
-  if (argc != 2) {
-    printf("usage: %s <data_set_directory>\n\tnote: data_set_directory must contain files X.in, Y.in, Phi.in, and H.in (B_exp.out if checking answer)\n", argv[0]);
-    return -1;
+  if (argc != 2) 
+  {
+    fprintf(stderr, "Usage: %s <data_set_directory>\n", argv[0]);
+	fprintf(stderr, "\tnote: data_set_directory must contain files:\n");
+	fprintf(stderr, "X.in\nY.in\nPhi.in\nH.in\nSig.in\n(B_exp.out if checking answer)\n");
+    exit(EXIT_FAILURE);
   }
 
   dir = argv[1];
@@ -70,8 +76,8 @@ int main( int argc, char *argv[] )
     return -1;
   }
   double max;
-  my_read(b_mine, b_mine_f, cf->p*cf->m*cf->t, 0);
-  my_read(b_exp, b_exp_f, cf->p*cf->m*cf->t, 0);
+  sync_read(b_mine, b_mine_f, cf->p*cf->m*cf->t, 0);
+  sync_read(b_exp,  b_exp_f,  cf->p*cf->m*cf->t, 0);
   /*printf("out[0]: %12e\n", b_mine[0]);*/
   /*printf("exp[0]: %12e\n", b_exp[0]);*/
   /*printf("out[1]: %12e\n", b_mine[1]);*/
@@ -101,3 +107,16 @@ int main( int argc, char *argv[] )
 #endif // TIMING
   return 0;
 }
+
+double compare(double* a, double* b, int size) {
+  double out = 0.0;
+  int i;
+  for (i = 0; i < size; i++) {
+    if((i % 1000) == 0 && fabs(a[i] - b[i]) > 1e-13)
+		printf("Difference at %d: %e [%f - %f]\n", i, fabs(a[i] - b[i]), a[i], b[i]);
+    if(out < fabs(a[i] - b[i]))
+      out = fabs(a[i] - b[i]);
+  }
+  return out;
+}
+
