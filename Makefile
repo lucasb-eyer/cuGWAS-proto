@@ -67,14 +67,6 @@ write_blocksize_test: $(OBJDIR)/write_blocksize_test.x
 write_tests: write_test write_blocksize_test 
 write_h_file: $(OBJDIR)/write_h_file.x
 
-#bin/src/driver.o: src/driver.c src/fgls.h src/io.h src/fgls_eigen.h
-#bin/src/eigenDec.o: src/eigenDec.c src/blas.h src/lapack.h
-#bin/src/fgls.o: src/fgls.c src/fgls.h src/io.h
-#bin/src/fgls_eigen.o: src/fgls_eigen.c src/fgls.h src/io.h
-#bin/src/io.o: src/io.c src/io.h src/fgls.h
-#bin/src/mod_x_y.o: src/mod_x_y.c src/fgls.h src/io.h src/options.h
-#bin/src/write_h_file.o: src/write_h_file.c
-
 bin/src/driver.o: src/driver.c src/io.h src/timing.h src/fgls_eigen.h
 bin/src/fgls_eigen.o: src/fgls_eigen.c src/blas.h src/lapack.h src/io.h \
  src/timing.h src/fgls_eigen.h
