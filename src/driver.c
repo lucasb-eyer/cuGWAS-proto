@@ -29,6 +29,7 @@ int main( int argc, char *argv[] )
   printf("t: ");                 scanf("%d", &cf->t);
   printf("width of XL: ");       scanf("%d", &cf->wXL);
   printf("x_b: ");               scanf("%d", &cf->x_b);
+  printf("y_b: ");               scanf("%d", &cf->y_b);
   printf("# compute threads: "); scanf("%d", &cf->NUM_COMPUTE_THREADS);
   cf->wXR = cf->p - cf->wXL;
 

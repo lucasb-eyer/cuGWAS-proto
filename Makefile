@@ -5,7 +5,7 @@ TESTDIR=test
 INCDIR=include
 CC=gcc
 #CC=icc
-CFLAGS= -Wall -pthread -I$(SRCDIR)/ -I$(TESTDIR)/ -I.
+CFLAGS= -g -Wall -pthread -I$(SRCDIR)/ -I$(TESTDIR)/ -I.
 
 #CC=vtcc
 #CFLAGS+= -g -DVTRACE -vt:mt -vt:inst manual -pthread -vt:verbose

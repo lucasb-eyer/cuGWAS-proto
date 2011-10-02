@@ -26,7 +26,7 @@ typedef struct
   int wXL; // width of XL
   int wXR; // width of XR
   int x_b;
-  /*int y_b;*/
+  int y_b;
 
   int NUM_COMPUTE_THREADS;
   /*int NUM_BUFFERS_PER_THREAD;*/
