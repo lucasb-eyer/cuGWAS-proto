@@ -8,7 +8,8 @@ INCDIR=include
 CFLAGS=-I$(SRCDIR)/ -I$(TESTDIR)/ -I.
 
 CC=vtcc
-CFLAGS+= -g -DVTRACE -vt:mt -vt:inst manual -pthread -vt:verbose
+#CFLAGS+= -g -Wall -DVTRACE -vt:mt -vt:inst manual -pthread -vt:verbose
+CFLAGS+= -Wall -DVTRACE -vt:mt -vt:inst manual -pthread -vt:verbose 
 
 #LIBS=$(LDDIR)/lapack_LINUX.a $(LDDIR)/libgoto2_penrynp-r1.07.a
 #LIBS=$(LDDIR)/lapack_LINUX.a $(LDDIR)/libgoto2.a -lgfortran -lpthread
@@ -17,7 +18,7 @@ LIBS = -lrwthmkl -lguide -lpthread -lmkl_lapack
 LIBPATHS=$(MKLROOT)/lib/em64t/:$(INTELROOT)/lib/intel64
 
 # all src files which do not contain a 'main' definition'
-NON_MAIN_SRC := src/fgls.c \
+NON_MAIN_SRC := src/timing.c \
 		src/io.c \
 		src/fgls_eigen.c \
 		src/preloop.c \
@@ -66,13 +67,13 @@ write_blocksize_test: $(OBJDIR)/write_blocksize_test.x
 write_tests: write_test write_blocksize_test 
 write_h_file: $(OBJDIR)/write_h_file.x
 
-bin/src/driver.o: src/driver.c src/fgls.h src/io.h src/fgls_eigen.h
-bin/src/eigenDec.o: src/eigenDec.c src/blas.h src/lapack.h
-bin/src/fgls.o: src/fgls.c src/fgls.h src/io.h
-bin/src/fgls_eigen.o: src/fgls_eigen.c src/fgls.h src/io.h
-bin/src/io.o: src/io.c src/io.h src/fgls.h
-bin/src/mod_x_y.o: src/mod_x_y.c src/fgls.h src/io.h src/options.h
-bin/src/write_h_file.o: src/write_h_file.c
+bin/src/driver.o: src/driver.c src/io.h src/timing.h src/fgls_eigen.h
+bin/src/fgls_eigen.o: src/fgls_eigen.c src/blas.h src/lapack.h src/io.h \
+ src/timing.h src/fgls_eigen.h
+bin/src/io.o: src/io.c src/io.h
+bin/src/preloop.o: src/preloop.c src/options.h src/blas.h src/lapack.h \
+ src/timing.h src/io.h
+bin/src/timing.o: src/timing.c src/io.h src/timing.h
 
 clean:
 	rm -rf $(OBJDIR); 

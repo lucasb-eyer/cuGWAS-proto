@@ -29,9 +29,9 @@ void swap_buffers(double** b1, double** b2) {
   *b2 = temp;
 }
 
-void swap_aiocb(const struct aiocb *x[], const struct aiocb *y[])
+void swap_aiocb(struct aiocb *x[], struct aiocb *y[])
 {
-	const struct aiocb *tmp = x[0];
+	struct aiocb *tmp = x[0];
 	x[0] = y[0];
 	y[0] = tmp;
 }
@@ -115,7 +115,7 @@ void* compute_thread_func(void* in)
 
   aiocb_b_prev = (struct aiocb *) malloc (y_b * sizeof(struct aiocb));
   aiocb_b_cur  = (struct aiocb *) malloc (y_b * sizeof(struct aiocb));
-  const struct aiocb *aiocb_x_cur_l[1]  = { &aiocb_x_cur }, 
+  struct aiocb *aiocb_x_cur_l[1]  = { &aiocb_x_cur }, 
 			         *aiocb_x_next_l[1] = { &aiocb_x_next },
 			         *aiocb_y_cur_l[1]  = { &aiocb_y_cur },
 			         *aiocb_y_next_l[1] = { &aiocb_y_next },
@@ -162,9 +162,10 @@ void* compute_thread_func(void* in)
 
   int iter = 0;
   struct timeval t0, t1;
+  int prev_y_inc = 0;
   for (jb = id * y_b; jb < t; jb += cf->NUM_COMPUTE_THREADS * y_b) 
   {
-	printf("Iter jb: %d\n", jb);
+	  /*printf("Iter jb: %d\n", jb);*/
     gettimeofday(&t0, NULL);
 	y_inc = MIN( y_b, t - jb );
     //read( y_cur, loops_t->Y_fp, 
@@ -182,13 +183,14 @@ void* compute_thread_func(void* in)
 	/*printf("Nbytes: %d\n",  aiocb_y_next_p->aio_nbytes);*/
     aio_read( aiocb_y_next_p );
 
+	/*printf("xl value: %f\n", *loops_t->XL[0]);*/
 	for (ll = 0; ll < y_inc; ll++)
 		memcpy( &xl[ll * wXL * n], loops_t->XL[0], wXL * n * sizeof(double) );
 #if VAMPIR
     VT_USER_START("WAIT_Y");
 #endif
 	if ( aio_suspend( aiocb_y_cur_l, 1, NULL ) != 0 )
-		fprintf(stderr, "Suspend error\n");
+		perror("Suspend Y error\n");
 	/*printf("Return value: %d\n", aio_return((struct aiocb *)aiocb_y_cur_l[0]));*/
 #if VAMPIR
     VT_USER_END("WAIT_Y");
@@ -224,17 +226,20 @@ void* compute_thread_func(void* in)
 	/*printf("K(1, %2d)        = %8f\n", j+1, y_cur[0]);*/
 	/*printf("K(500, %2d)      = %8f\n", j+1, y_cur[499]);*/
 
+	/*printf("xl value: %f\n", xl[0]);*/
       /* sqrt(Winv) * Z' * XL */
 	for (ll = 0; ll < y_inc; ll++)
 	  for ( k = 0; k < wXL; k++ )
 		  for ( l = 0; l < n; l++ )
 			  xl[ ll * wXL * n + k * n + l ] *= Winv[l];
+	/*printf("xl value: %f\n", xl[0]);*/
 	  /*printf("W(1, 1)         = %8f\n", x_cur[0]);*/
 	  /*printf("W(500, 3000)    = %8f\n", x_cur[x_b*n*p-1]);*/
       
       /* 7) b = sqrt(Winv) * ZtXL * y */
 	for (ll = 0; ll < y_inc; ll++)
       dgemv_("T", &n, &wXL, &ONE, &xl[ll * wXL * n], &n, &y_cur[ll * n], &iONE, &ZERO, &xl_b[ll * wXL], &iONE);
+	/*printf("xl_b value: %f\n", xl_b[0]);*/
 
 	for (ll = 0; ll < y_inc; ll++)
 	{
@@ -251,7 +256,7 @@ void* compute_thread_func(void* in)
 #endif
     for (ib = 0; ib < m; ib += x_b) 
 	{
-		printf("Iter ib: %d\n", ib);
+		/*printf("Iter ib: %d\n", ib);*/
 #if VAMPIR
 		VT_USER_START("READ_X");
 #endif
@@ -273,7 +278,9 @@ void* compute_thread_func(void* in)
 		VT_USER_START("WAIT_X");
 #endif
 		BEGIN_TIMING();
-		aio_suspend( aiocb_x_cur_l, 1, NULL );
+		/*aio_suspend( aiocb_x_cur_l, 1, NULL );*/
+		if ( aio_suspend( aiocb_x_cur_l, 1, NULL ) != 0 )
+			perror("Suspend X error\n");
 	    END_TIMING(cf->time->comp_mutex_wait_time);
 #if VAMPIR
 		VT_USER_END("WAIT_X");
@@ -304,14 +311,17 @@ void* compute_thread_func(void* in)
 		  for (i = 0; i < x_inc; i++)
 		  {
 			  /*printf("Iter i: %d (%d, %d, %d)\n", i, jb, ib, j);*/
-			  int k;
+			  /*int k;*/
+			  /*printf("value: %f\n", b_cur[j * x_inc * p + i*p]);*/
 			  memcpy(&b_cur[j * x_inc * p + i * p], &xl_b[j * wXL], wXL * sizeof(double));
+			  /*printf("value: %f\n", b_cur[j * x_inc * p + i*p]);*/
 			  /*printf("DGEMV( T, %d, %d, %2f, %p, %d, %p, %d, %2f, %p, %d);\n",*/
 			  /*n, wXR, ONE, &x_cur[i * wXR * n], n, y_cur, iONE, ZERO, b_cur[i*p + wXL], iONE);*/
 			  dgemv_("T", 
 					  &n, &wXR, 
 					  &ONE, &x_copy[i * wXR * n], &n, &y_cur[j* n], &iONE, 
 					  &ZERO, &b_cur[j*x_inc*p + i*p + wXL], &iONE);
+			  /*printf("value: %f\n", b_cur[j * x_inc * p + i*p]);*/
 			  /*printf("RHS(%2d, %2d)    = %8f\n", (ib+i)*p+1,   j+1, b_cur[(ib+i)*p]);*/
 			  /*printf("RHS(%2d, %2d)    = %8f\n", (ib+i+1)*p, j+1, b_cur[(ib+i+1)*p-1]);*/
 			  /*printf("Thread: %d - Iterating X(%d) - Solving\n", id, i);*/
@@ -332,12 +342,14 @@ void* compute_thread_func(void* in)
 				/*printf("%8f %8f %8f %8f\n", xtSx[2], xtSx[6], xtSx[10], xtSx[14]);*/
 				/*printf("%8f %8f %8f %8f\n", xtSx[3], xtSx[7], xtSx[11], xtSx[15]);*/
 				/* 8) W^-1 * y */
+				/*printf("value pre dposv: %f\n", b_cur[j * x_inc * p + i*p]);*/
 				dposv_("L", &p, &iONE, xtSx, &p, &b_cur[j*x_inc*p + i*p], &p, &info);
 				if (info != 0)
 				{
 				  fprintf(stderr, "Error executing dposv (y: %d, x: %d, th: %d): %d\n", jb+j, ib+i, id, info);
 				  exit(-1);
 				}
+				/*printf("value post dposv: %f\n", b_cur[j * x_inc * p + i*p]);*/
 				/*if ( i== 0) printf("res[%d, %2d]: %f\n", ib+i, j, *b_cur);*/
 		  }
 	  }
@@ -353,21 +365,27 @@ void* compute_thread_func(void* in)
 #endif
 	  if ( iter > 0)
 	  {
-  		aio_suspend( aiocb_b_prev_l, 1, NULL );
+		  /*if ( aio_suspend( aiocb_b_prev_l, prev_y_inc, NULL ) != 0 ) // FIX*/
+  		if ( aio_suspend( aiocb_b_prev_l, y_b, NULL ) != 0 ) // FIX
+			perror("Error waiting for b");
 	  }
 #if VAMPIR
       VT_USER_END("WAIT_B");
 #endif
 
-      bzero( (char *)aiocb_b_cur_l[0], y_b * sizeof(struct aiocb) );
+      bzero( (char *)aiocb_b_cur_l[0], y_inc * sizeof(struct aiocb) );
+	  struct aiocb *aiocb_b_cur_p;
 	  for ( k = 0; k < y_inc; k++ )
 	  {
-		  struct aiocb *aiocb_b_cur_p = &aiocb_b_cur_l[i];
+		  aiocb_b_cur_p = &aiocb_b_cur_l[0][k];
+		  aiocb_b_cur_p->aio_reqprio = 0;
 		  aiocb_b_cur_p->aio_buf = &b_cur[k*x_inc*p];
 		  aiocb_b_cur_p->aio_fildes = fileno( loops_t->B_fp );
 		  aiocb_b_cur_p->aio_nbytes = x_inc * p * sizeof(double);
-		  /*aiocb_b_cur_p->aio_nbytes = MIN( x_b * p, (m - ib) * p) * sizeof(double);*/
 		  aiocb_b_cur_p->aio_offset = ((jb+k) * m * p + ib * p) * sizeof(double);
+		  /*printf("Nbytes: %d\n", aiocb_b_cur_p->aio_nbytes);*/
+		  /*printf("Offset: %d\n", aiocb_b_cur_p->aio_offset);*/
+		  /*printf("k: %p\n", &aiocb_b_cur_l[0][k]);*/
 		  /*aiocb_y.aio_flag = AIO_RAW;*/
 		  if ( aio_write( aiocb_b_cur_p ) != 0 )
 			  perror("Error writing b");
@@ -383,10 +401,17 @@ void* compute_thread_func(void* in)
 	/*printf("Iter time: %ld ms\n", get_diff_ms(&t0, &t1));*/
 	swap_aiocb( aiocb_y_cur_l, aiocb_y_next_l );
 	swap_buffers( &y_cur, &y_next);
+	prev_y_inc = y_inc;
   }
+  /*printf("last wait\n");*/
   aio_suspend( aiocb_x_cur_l, 1, NULL );
   aio_suspend( aiocb_y_cur_l, 1, NULL );
-  aio_suspend( aiocb_b_prev_l, 1, NULL );
+  /*aio_suspend( aiocb_b_prev_l, 1, NULL );*/
+  /*if ( aio_suspend( aiocb_b_prev_l, y_inc, NULL ) != 0 )*/
+  if ( aio_suspend( aiocb_b_prev_l, y_inc, NULL ) != 0 )
+    perror("Suspend B error");
+  printf("%d\n", aio_error((const struct aiocb*)aiocb_b_prev));
+  sleep(3);
   pthread_exit(NULL);
 }
 
@@ -487,8 +512,11 @@ int fgls_eigen( FGLS_eigen_t *cf )
 
   loops_t_comp = ( ooc_loops_t* ) malloc ( cf->NUM_COMPUTE_THREADS * sizeof(ooc_loops_t) );
   compute_threads = ( pthread_t * ) malloc ( cf->NUM_COMPUTE_THREADS * sizeof(pthread_t) );
-  if (compute_threads == NULL) fprintf(stderr, "Not enough memory\n");
-  else fprintf(stderr, "Enough memory\n");
+  if (compute_threads == NULL)
+  {
+	  fprintf(stderr, "Not enough memory\n");
+	  exit(EXIT_FAILURE);
+  }
   for (i = 0; i < cf->NUM_COMPUTE_THREADS; i++) 
   {
     memcpy((void*)&loops_t_comp[i], (void*)&loops_t, sizeof(ooc_loops_t));    
@@ -501,7 +529,6 @@ int fgls_eigen( FGLS_eigen_t *cf )
       pthread_exit(NULL);
     }
   }
-  printf("Created\n");
 
   void* retval;
   for (i = 0; i < cf->NUM_COMPUTE_THREADS; i++)

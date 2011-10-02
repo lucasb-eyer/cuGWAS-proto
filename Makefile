@@ -3,17 +3,19 @@ LDDIR=libs
 SRCDIR=src
 TESTDIR=test
 INCDIR=include
-CC=gcc
-#CC=icc
-CFLAGS= -g -Wall -pthread -I$(SRCDIR)/ -I$(TESTDIR)/ -I.
+#CC=gcc
+CC=icc
+CFLAGS=-g -Wall -pthread -I$(SRCDIR)/ -I$(TESTDIR)/ -I.
 
 #CC=vtcc
-#CFLAGS+= -g -DVTRACE -vt:mt -vt:inst manual -pthread -vt:verbose
+#CFLAGS+= -g -Wall -DVTRACE -vt:mt -vt:inst manual -pthread -vt:verbose
 
 #LIBS=$(LDDIR)/lapack_LINUX.a $(LDDIR)/libgoto2_penrynp-r1.07.a
 #LIBS=$(LDDIR)/lapack_LINUX.a $(LDDIR)/libgoto2.a
 #LIBS=$(FLAGS_MKL_LINKER)
-LIBS = -lm $(HOME)/libs/lapack-3.3.1/lapack_LINUX.a $(HOME)/libs/GotoBLAS2/libgoto2.a -lgfortran #-lpthread
+LIBS = -lrwthmkl -lguide -lpthread -lmkl_lapack
+LIBPATHS=$(MKLROOT)/lib/em64t/:$(INTELROOT)/lib/intel64
+#LIBS = -lm $(HOME)/libs/lapack-3.3.1/lapack_LINUX.a $(HOME)/libs/GotoBLAS2/libgoto2.a -lgfortran #-lpthread
 #LIBS = -ldl -lm $(HOME)/libs/lapack-3.3.1/lapack_LINUX.a $(HOME)/libs/GotoBLAS2/libgoto2.a -lgfortran -lpthread
 #LIBPATHS=$(HOME)/libs/GotoBLAS2/
 
