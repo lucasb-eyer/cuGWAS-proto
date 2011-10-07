@@ -74,7 +74,7 @@ bin/src/fgls_eigen.o: src/fgls_eigen.c src/blas.h src/lapack.h src/io.h \
  src/timing.h src/fgls_eigen.h
 bin/src/io.o: src/io.c src/io.h
 bin/src/preloop.o: src/preloop.c src/options.h src/blas.h src/lapack.h \
- src/timing.h src/io.h
+ src/timing.h src/io.h src/preloop.h
 bin/src/timing.o: src/timing.c src/io.h src/timing.h
 
 clean:

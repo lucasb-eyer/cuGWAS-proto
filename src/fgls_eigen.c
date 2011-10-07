@@ -29,11 +29,11 @@ void swap_buffers(double** b1, double** b2) {
   *b2 = temp;
 }
 
-void swap_aiocb(struct aiocb *x[], struct aiocb *y[])
+void swap_aiocb(struct aiocb ***x, struct aiocb ***y)
 {
-	struct aiocb *tmp = x[0];
-	x[0] = y[0];
-	y[0] = tmp;
+	struct aiocb **tmp = *x;
+	*x = *y;
+	*y = tmp;
 }
 
 typedef struct {
@@ -98,14 +98,14 @@ void* compute_thread_func(void* in)
   double ONE = 1.0;
   double ZERO = 0.0;
   int iONE = 1;
-  int iZERO = 0;
+  /*int iZERO = 0;*/
   double *alpha = loops_t->alpha, 
 		 *beta  = loops_t->beta;
 
   int ib, jb, i, j, k, l, ll;
   int x_inc, y_inc;
-  int mpb;
-  int mpb_real;
+  /*int mpb;*/
+  /*int mpb_real;*/
   int info;
 
   struct aiocb aiocb_x_cur,  aiocb_x_next,
@@ -115,12 +115,29 @@ void* compute_thread_func(void* in)
 
   aiocb_b_prev = (struct aiocb *) malloc (y_b * sizeof(struct aiocb));
   aiocb_b_cur  = (struct aiocb *) malloc (y_b * sizeof(struct aiocb));
-  struct aiocb *aiocb_x_cur_l[1]  = { &aiocb_x_cur }, 
-			         *aiocb_x_next_l[1] = { &aiocb_x_next },
-			         *aiocb_y_cur_l[1]  = { &aiocb_y_cur },
-			         *aiocb_y_next_l[1] = { &aiocb_y_next },
-			         *aiocb_b_prev_l[1] = {  aiocb_b_prev },
-			         *aiocb_b_cur_l[1]  = {  aiocb_b_cur };
+  struct aiocb **aiocb_x_cur_l,//  = { &aiocb_x_cur }, 
+			         **aiocb_x_next_l,// = { &aiocb_x_next },
+			         **aiocb_y_cur_l,//  = { &aiocb_y_cur },
+			         **aiocb_y_next_l,// = { &aiocb_y_next },
+			         **aiocb_b_prev_l,// = {  aiocb_b_prev },
+			         **aiocb_b_cur_l;//  = {  aiocb_b_cur };
+
+  aiocb_x_cur_l  = (struct aiocb **) malloc (sizeof(struct aiocb *));
+  aiocb_x_next_l = (struct aiocb **) malloc (sizeof(struct aiocb *));
+  aiocb_y_cur_l  = (struct aiocb **) malloc (sizeof(struct aiocb *));
+  aiocb_y_next_l = (struct aiocb **) malloc (sizeof(struct aiocb *));
+  aiocb_b_prev_l = (struct aiocb **) malloc (y_b * sizeof(struct aiocb *));
+  aiocb_b_cur_l  = (struct aiocb **) malloc (y_b * sizeof(struct aiocb *));
+
+  aiocb_x_cur_l[0]  = &aiocb_x_cur;
+  aiocb_x_next_l[0] = &aiocb_x_next;
+  aiocb_y_cur_l[0]  = &aiocb_y_cur;
+  aiocb_y_next_l[0] = &aiocb_y_next;
+  for ( i = 0; i < y_b; i++ )
+  {
+	  aiocb_b_prev_l[i] = &aiocb_b_prev[i];
+	  aiocb_b_cur_l[i]  = &aiocb_b_cur[i];
+  }
 
   bzero( (char *)&aiocb_x_cur,  sizeof(struct aiocb) );
   bzero( (char *)&aiocb_x_next, sizeof(struct aiocb) );
@@ -154,20 +171,23 @@ void* compute_thread_func(void* in)
   {
 	  aiocb_b_prev[i].aio_fildes = fileno( loops_t->B_fp );
 	  /*aiocb_b_prev.aio_flag = AIO_RAW;*/
-	  aiocb_b_prev[i].aio_buf = b_prev;
+	  aiocb_b_prev[i].aio_buf = &b_prev[p * x_b * i];
 	  aiocb_b_cur[i].aio_fildes = fileno( loops_t->B_fp );
 	  /*aiocb_b_cur.aio_flag = AIO_RAW;*/
-	  aiocb_b_cur[i].aio_buf = b_cur;
+	  aiocb_b_cur[i].aio_buf = &b_cur[p * x_b * i];
   }
 
   int iter = 0;
   struct timeval t0, t1;
-  int prev_y_inc = 0;
+  /*int prev_y_inc = 0;*/
   for (jb = id * y_b; jb < t; jb += cf->NUM_COMPUTE_THREADS * y_b) 
   {
 	  /*printf("Iter jb: %d\n", jb);*/
     gettimeofday(&t0, NULL);
 	y_inc = MIN( y_b, t - jb );
+#if VAMPIR
+      VT_USER_START("READ_Y");
+#endif
     //read( y_cur, loops_t->Y_fp, 
 	//		j + cf->NUM_COMPUTE_THREADS > t ? 0 : MIN( cf->NUM_COMPUTE_THREADS * n, (t - (j + cf->NUM_COMPUTE_THREADS)) * n ), 
 	//		j + cf->NUM_COMPUTE_THREADS > t ? 0 : (j + cf->NUM_COMPUTE_THREADS) * n );
@@ -186,6 +206,9 @@ void* compute_thread_func(void* in)
 	/*printf("xl value: %f\n", *loops_t->XL[0]);*/
 	for (ll = 0; ll < y_inc; ll++)
 		memcpy( &xl[ll * wXL * n], loops_t->XL[0], wXL * n * sizeof(double) );
+#if VAMPIR
+      VT_USER_START("READ_Y");
+#endif
 #if VAMPIR
     VT_USER_START("WAIT_Y");
 #endif
@@ -257,6 +280,7 @@ void* compute_thread_func(void* in)
     for (ib = 0; ib < m; ib += x_b) 
 	{
 		/*printf("Iter ib: %d\n", ib);*/
+		/*printf("%d Iter: %d\n", id, iter);*/
 #if VAMPIR
 		VT_USER_START("READ_X");
 #endif
@@ -290,8 +314,8 @@ void* compute_thread_func(void* in)
 #endif
       BEGIN_TIMING();
       x_inc = MIN(x_b, m - ib);
-	  mpb = p * x_b;
-	  mpb_real = p * x_inc;
+	  /*mpb = p * x_b;*/
+	  /*mpb_real = p * x_inc;*/
 
 	  for ( j = 0; j < y_inc; j++ )
 	  {
@@ -366,52 +390,68 @@ void* compute_thread_func(void* in)
 	  if ( iter > 0)
 	  {
 		  /*if ( aio_suspend( aiocb_b_prev_l, prev_y_inc, NULL ) != 0 ) // FIX*/
-  		if ( aio_suspend( aiocb_b_prev_l, y_b, NULL ) != 0 ) // FIX
-			perror("Error waiting for b");
+		  /*if ( aio_suspend( aiocb_b_prev_l, y_b, NULL ) != 0 ) // FIX*/
+		  /*perror("Error waiting for b");*/
+		  for ( k = 0; k < y_b; k++ )
+		  {
+			if ( aio_suspend( &aiocb_b_prev_l[k], 1, NULL ) != 0 )
+			  perror("Suspend B error");
+			/*printf("%d - %d - %p - %d\n", id, aio_error((const struct aiocb*)aiocb_b_prev_l[k]), aiocb_b_prev_l[k], aiocb_b_prev_l[k]->aio_offset);*/
+		  }
 	  }
 #if VAMPIR
       VT_USER_END("WAIT_B");
 #endif
 
-      bzero( (char *)aiocb_b_cur_l[0], y_inc * sizeof(struct aiocb) );
+#if VAMPIR
+      VT_USER_START("WRITE_B");
+#endif
+      bzero( (char *)aiocb_b_cur, y_inc * sizeof(struct aiocb) );
+	  /*bzero( (char *)aiocb_b_cur_l[0], y_inc * sizeof(struct aiocb) );*/
 	  struct aiocb *aiocb_b_cur_p;
 	  for ( k = 0; k < y_inc; k++ )
 	  {
-		  aiocb_b_cur_p = &aiocb_b_cur_l[0][k];
+		  /*aiocb_b_cur_p = &aiocb_b_cur_l[0][k];*/
+		  aiocb_b_cur_p = aiocb_b_cur_l[k];
 		  aiocb_b_cur_p->aio_reqprio = 0;
-		  aiocb_b_cur_p->aio_buf = &b_cur[k*x_inc*p];
+		  aiocb_b_cur_p->aio_buf = &b_cur[ k * x_inc * p];
 		  aiocb_b_cur_p->aio_fildes = fileno( loops_t->B_fp );
 		  aiocb_b_cur_p->aio_nbytes = x_inc * p * sizeof(double);
 		  aiocb_b_cur_p->aio_offset = ((jb+k) * m * p + ib * p) * sizeof(double);
+		  /*aiocb_b_cur_p->lio_opcode = LIO_WRITE;*/
 		  /*printf("Nbytes: %d\n", aiocb_b_cur_p->aio_nbytes);*/
-		  /*printf("Offset: %d\n", aiocb_b_cur_p->aio_offset);*/
-		  /*printf("k: %p\n", &aiocb_b_cur_l[0][k]);*/
+		  /*printf("%d - Offset: %d\n", id, aiocb_b_cur_p->aio_offset);*/
+		  /*printf("%d - %p\n", id, aiocb_b_cur_l[k]);*/
 		  /*aiocb_y.aio_flag = AIO_RAW;*/
 		  if ( aio_write( aiocb_b_cur_p ) != 0 )
 			  perror("Error writing b");
 	  }
+#if VAMPIR
+      VT_USER_END("WRITE_B");
+#endif
 
-	  swap_aiocb( aiocb_x_cur_l, aiocb_x_next_l );
+	  swap_aiocb( &aiocb_x_cur_l, &aiocb_x_next_l );
 	  swap_buffers( &x_cur, &x_next);
-	  swap_aiocb( aiocb_b_cur_l, aiocb_b_prev_l );
+	  swap_aiocb( &aiocb_b_cur_l, &aiocb_b_prev_l );
 	  swap_buffers( &b_cur, &b_prev);
 	  iter++;
     }
     gettimeofday(&t1, NULL);
 	/*printf("Iter time: %ld ms\n", get_diff_ms(&t0, &t1));*/
-	swap_aiocb( aiocb_y_cur_l, aiocb_y_next_l );
+	swap_aiocb( &aiocb_y_cur_l, &aiocb_y_next_l );
 	swap_buffers( &y_cur, &y_next);
-	prev_y_inc = y_inc;
+	/*prev_y_inc = y_inc;*/
   }
-  /*printf("last wait\n");*/
   aio_suspend( aiocb_x_cur_l, 1, NULL );
   aio_suspend( aiocb_y_cur_l, 1, NULL );
   /*aio_suspend( aiocb_b_prev_l, 1, NULL );*/
   /*if ( aio_suspend( aiocb_b_prev_l, y_inc, NULL ) != 0 )*/
-  if ( aio_suspend( aiocb_b_prev_l, y_inc, NULL ) != 0 )
-    perror("Suspend B error");
-  printf("%d\n", aio_error((const struct aiocb*)aiocb_b_prev));
-  sleep(3);
+  for ( i = 0; i < y_inc; i++ )
+  {
+    if ( aio_suspend( &aiocb_b_prev_l[i], 1, NULL ) != 0 )
+      perror("Suspend B error");
+	/*printf("END: %d - %d - %p - %d\n", id, aio_error((const struct aiocb*)aiocb_b_prev_l[i]), aiocb_b_prev_l[i], aiocb_b_prev_l[i]->aio_offset);*/
+  }
   pthread_exit(NULL);
 }
 
@@ -424,8 +464,8 @@ int fgls_eigen( FGLS_eigen_t *cf )
   pthread_t *compute_threads;
 
   double *Phi,
-		 *Z,
-		 *W;
+		 *Z;
+		 /**W;*/
   FILE *Phi_fp,
 	   *h_fp, *sigma_fp,
 	   *XL_fp;

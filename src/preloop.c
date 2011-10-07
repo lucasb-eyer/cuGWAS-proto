@@ -14,6 +14,7 @@
 
 #include "timing.h"
 #include "io.h"
+#include "preloop.h"
 #include "fgls_eigen.h"
 
 typedef struct 
@@ -64,8 +65,9 @@ void* ooc_gemm_io( void *in )
   DEF_TIMING();
 
   ooc_gemm_t *gemm_t = ( ooc_gemm_t* )in;
+#if TIMING
   FGLS_eigen_t *cf = &FGLS_eigen_config;
-
+#endif
   double *in_cur   = gemm_t->in[0];
   double *in_next  = gemm_t->in[1];
   double *out_prev = gemm_t->out[0];
@@ -125,7 +127,9 @@ void* ooc_gemm_comp( void *in )
   DEF_TIMING();
 
   ooc_gemm_t *gemm_t = ( ooc_gemm_t *)in;
+#if TIMING
   FGLS_eigen_t *cf = &FGLS_eigen_config;
+#endif
 
   double *in_cur   = gemm_t->in[0];
   double *in_next  = gemm_t->in[1];
@@ -183,7 +187,7 @@ int preloop(double *Phi, double *Z, double *W)
   /*printf("Chunk: %ld MB\n", chunk_size >> 20);*/
   /*printf("numcols: %ld\n", num_cols);*/
 
-  int fd_in, fd_out;
+  /*int fd_in, fd_out;*/
 
   /*printf("chunk size: %d\n", chunk_size);*/
   /*printf("Num cols: %d\n", num_cols);*/
