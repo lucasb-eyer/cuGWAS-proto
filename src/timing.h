@@ -1,9 +1,6 @@
 #ifndef TIMING_H
 #define TIMING_H
 
-#define DEBUG 1
-#define TIMING 0
-#define VAMPIR 0
 
 #include <stdio.h>
 

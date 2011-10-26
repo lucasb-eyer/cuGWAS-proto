@@ -13,8 +13,8 @@ CFLAGS=-g -Wall -pthread -I$(SRCDIR)/ -I$(TESTDIR)/ -I.
 #LIBS=$(LDDIR)/lapack_LINUX.a $(LDDIR)/libgoto2_penrynp-r1.07.a
 #LIBS=$(LDDIR)/lapack_LINUX.a $(LDDIR)/libgoto2.a
 #LIBS=$(FLAGS_MKL_LINKER)
-LIBS = -lrwthmkl -lguide -lpthread -lmkl_lapack
-LIBPATHS=$(MKLROOT)/lib/em64t/:$(INTELROOT)/lib/intel64
+LIBS = -lrwthmkl -liomp5 -lpthread -lmkl_lapack95_lp64
+LIBPATHS=$(MKLROOT)/lib/intel64/:$(INTELROOT)/lib/intel64
 #LIBS = -lm $(HOME)/libs/lapack-3.3.1/lapack_LINUX.a $(HOME)/libs/GotoBLAS2/libgoto2.a -lgfortran #-lpthread
 #LIBS = -ldl -lm $(HOME)/libs/lapack-3.3.1/lapack_LINUX.a $(HOME)/libs/GotoBLAS2/libgoto2.a -lgfortran -lpthread
 #LIBPATHS=$(HOME)/libs/GotoBLAS2/
@@ -23,7 +23,7 @@ LIBPATHS=$(MKLROOT)/lib/em64t/:$(INTELROOT)/lib/intel64
 NON_MAIN_SRC := src/timing.c \
 		src/io.c \
 		src/fgls_eigen.c \
-		src/preloop.c \
+		src/common.c # \
 		test/test_framework.c
 
 NON_MAIN_OBJ := \

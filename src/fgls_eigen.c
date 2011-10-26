@@ -3,6 +3,9 @@
 #include <string.h>
 #include <math.h>
 
+#include <sys/types.h>
+#include <sys/stat.h>
+
 #include <sys/time.h>
 #include <time.h>
 
@@ -12,6 +15,8 @@
 
 #include "blas.h"
 #include "lapack.h"
+#include "options.h"
+#include "common.h"
 #include "io.h"
 #include "timing.h"
 #include "fgls_eigen.h"
@@ -20,54 +25,194 @@
   #include "vt_user.h"
 #endif
 
-#define NUM_BUFFERS_PER_THREAD 2
+void* compute_thread_func(void* in);
+void eigenDec(int n, double *Phi, double *Z, double *W);
+void* ooc_gemm_comp( void *in );
+void* ooc_gemm_io( void *in );
 
-void swap_buffers(double** b1, double** b2) {
-  double* temp;
-  temp = *b1;
-  *b1 = *b2;
-  *b2 = temp;
-}
-
-void swap_aiocb(struct aiocb ***x, struct aiocb ***y)
+/*
+ * Entry point for the solution of the Feasible Generalized Least-Squares problem
+ */
+int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
+               int x_b, int y_b, int num_threads,
+			   char *Phi_path, char *h2_path, char *sigma2_path,
+			   char *XL_path, char *XR_path, char *Y_path,
+			   char *B_path, char *V_path)
 {
-	struct aiocb **tmp = *x;
-	*x = *y;
-	*y = tmp;
+	FGLS_config_t cf;
+
+	initialize_config(
+			&cf,
+			n, p, m, t, wXL, wXR,
+			x_b, y_b, num_threads,
+			Phi_path, h2_path, sigma2_path,
+			XL_path, XR_path, Y_path,
+			B_path, V_path
+	);
+//}
+
+//int fgls_eigen( FGLS_eigen_t *cf ) 
+//{
+  int rc, i;
+  pthread_t *compute_threads;
+
+  double *Phi,
+		 *Z;
+		 /**W;*/
+  FILE *Phi_fp,
+	   *h_fp, *sigma_fp,
+	   *XL_fp;
+  ooc_loops_t loops_t;
+  ooc_loops_t *loops_t_comp;
+
+  /*sprintf(str_buf, "%s/X.in", dir);*/
+  /*x_file = fopen(str_buf, "rb");*/
+  /*if(!x_file) {*/
+  /*printf("error opening x_file(%s)! exiting...\n", str_buf);*/
+  /*exit(-1);*/
+  /*}*/
+
+  Phi = ( double* ) malloc ( cf.n * cf.n * sizeof(double) );
+  loops_t.W = ( double* ) malloc ( cf.n * sizeof(double) );
+  Z   = ( double* ) malloc ( cf.n * cf.n * sizeof(double) );
+#if VAMPIR
+  VT_USER_START("PRELOOP");
+#endif
+  Phi_fp = fopen( cf.Phi_path, "rb" );
+  sync_read( Phi, Phi_fp, cf.n * cf.n, 0 );
+  setenv("OMP_NUM_THREADS", "7", 1);
+  preloop(&cf, Phi, Z, loops_t.W);
+  setenv("OMP_NUM_THREADS", "1", 1);
+  free( Phi );
+  free( Z );
+  fclose( Phi_fp );
+#if VAMPIR
+  VT_USER_END("PRELOOP");
+#endif
+
+  loops_t.cf = &cf;
+  for (i = 0; i < NUM_BUFFERS_PER_THREAD; i++) 
+  {
+    loops_t.X[i] = ( double* ) malloc ( cf.NUM_COMPUTE_THREADS * cf.x_b * cf.p * cf.n * sizeof(double) );
+    loops_t.Y[i] = ( double* ) malloc ( cf.NUM_COMPUTE_THREADS * cf.y_b * cf.n * sizeof(double) );
+    loops_t.B[i] = ( double* ) malloc ( cf.NUM_COMPUTE_THREADS * cf.x_b * cf.y_b * cf.p * sizeof(double) );
+    loops_t.V[i] = ( double* ) malloc ( cf.NUM_COMPUTE_THREADS * cf.x_b * cf.y_b * cf.p * cf.p * sizeof(double) );
+  }
+  // The original in XL[0]
+  // The copy to overwrite in XL[1]
+  loops_t.XL[0] = ( double* ) malloc ( cf.wXL * cf.n * sizeof(double) );
+  loops_t.XL[1] = ( double* ) malloc ( cf.NUM_COMPUTE_THREADS * cf.wXL * cf.n * cf.y_b * sizeof(double) );
+  loops_t.XL_b  = ( double* ) malloc ( cf.NUM_COMPUTE_THREADS * cf.wXL * cf.y_b * sizeof(double) );
+  loops_t.XLtXL = ( double* ) malloc ( cf.NUM_COMPUTE_THREADS * cf.wXL * cf.wXL * cf.y_b * sizeof(double) );
+
+  loops_t.h = ( double* ) malloc ( cf.t * sizeof(double) );
+  loops_t.sigma = ( double* ) malloc ( cf.t * sizeof(double) );
+
+  loops_t.alpha   = ( double* ) malloc ( cf.NUM_COMPUTE_THREADS * cf.y_b * sizeof(double) );
+  loops_t.beta    = ( double* ) malloc ( cf.NUM_COMPUTE_THREADS * cf.y_b * sizeof(double) );
+  loops_t.Winv    = ( double* ) malloc ( cf.NUM_COMPUTE_THREADS * cf.x_b * cf.n * sizeof(double) );
+  loops_t.xtSx    = ( double* ) malloc ( cf.NUM_COMPUTE_THREADS * cf.p * cf.p * sizeof(double) );
+
+  if (loops_t.xtSx == NULL)
+  {
+	  fprintf(stderr, __FILE__ ": Error, not enough memory\n");
+	  exit(EXIT_FAILURE);
+  }
+
+  loops_t.XR_fp = fopen( cf.ZtXR_path, "rb");
+  loops_t.Y_fp = fopen( cf.ZtY_path, "rb");
+  loops_t.B_fp = fopen( cf.B_path, "wb");
+  loops_t.V_fp = fopen( cf.V_path, "wb");
+
+  XL_fp = fopen( cf.ZtXL_path, "rb" );
+  sync_read( loops_t.XL[0], XL_fp, cf.wXL * cf.n, 0 );
+  fclose( XL_fp );
+  /*if(!x_file) {*/
+  /*printf("error opening x_file(%s)! exiting...\n", str_buf);*/
+  /*exit(-1);*/
+  /*}*/
+
+  /*printf("starting compute and io threads\n");*/
+
+#if VAMPIR
+  VT_USER_START("LOOPS");
+#endif
+  h_fp = fopen( cf.h_path, "r");
+  sync_read(loops_t.h, h_fp, cf.t, 0);
+  fclose( h_fp );
+  sigma_fp = fopen( cf.sigma_path, "r");
+  sync_read(loops_t.sigma, sigma_fp, cf.t, 0);
+  fclose( sigma_fp );
+
+  printf("LOOPS\n");
+
+  loops_t_comp = ( ooc_loops_t* ) malloc ( cf.NUM_COMPUTE_THREADS * sizeof(ooc_loops_t) );
+  compute_threads = ( pthread_t * ) malloc ( cf.NUM_COMPUTE_THREADS * sizeof(pthread_t) );
+  if (compute_threads == NULL)
+  {
+	  fprintf(stderr, "Not enough memory\n");
+	  exit(EXIT_FAILURE);
+  }
+  for (i = 0; i < cf.NUM_COMPUTE_THREADS; i++) 
+  {
+    memcpy((void*)&loops_t_comp[i], (void*)&loops_t, sizeof(ooc_loops_t));    
+    loops_t_comp[i].id = i;
+
+    rc = pthread_create(&compute_threads[i], NULL, compute_thread_func, (void*)&loops_t_comp[i]);
+    if (rc) 
+	{
+      fprintf(stderr, "ERROR in " __FILE__ ": pthread_create() returned %d\n", rc);
+      pthread_exit(NULL);
+    }
+  }
+
+  void* retval;
+  for (i = 0; i < cf.NUM_COMPUTE_THREADS; i++)
+    pthread_join(compute_threads[i], &retval);
+#if VAMPIR
+  VT_USER_START("END");
+#endif
+
+  printf("LOOPS Done\n");
+
+  fclose( loops_t.XR_fp );
+  fclose( loops_t.Y_fp );
+  fclose( loops_t.B_fp );
+  fclose( loops_t.V_fp );
+
+  for (i = 0; i < NUM_BUFFERS_PER_THREAD; i++) 
+  {
+	  free( loops_t.X[i] );
+	  free( loops_t.Y[i] );
+	  free( loops_t.B[i] );
+	  free( loops_t.V[i] );
+  }
+  free( loops_t.XL[0] );
+  free( loops_t.XL[1] );
+  free( loops_t.XL_b  );
+  free( loops_t.XLtXL );
+
+  free( loops_t.h );
+  free( loops_t.sigma );
+  free( loops_t.W );
+
+  free( loops_t.alpha );
+  free( loops_t.beta );
+  free( loops_t.Winv );
+  free( loops_t.xtSx );
+
+  free( loops_t_comp );
+  free( compute_threads );
+
+  return 0;
 }
-
-typedef struct {
-	FILE *XR_fp;
-	FILE *Y_fp;
-	FILE *B_fp;
-	double *XL[2];
-	double *XL_b;
-	double *XLtXL;
-
-	double *X[NUM_BUFFERS_PER_THREAD];
-	double *Y[NUM_BUFFERS_PER_THREAD];
-	double *B[NUM_BUFFERS_PER_THREAD];
-
-	double *h;
-	double *sigma;
-	double *W;
-	double *alpha;
-	double *beta;
-	double *Winv;
-	double *xtSx;
-
-	FGLS_eigen_t *cf;
-
-	int id;
-} ooc_loops_t;
-
 
 void* compute_thread_func(void* in) 
 {
   DEF_TIMING();
 
   ooc_loops_t *loops_t = ( ooc_loops_t* ) in;
-  FGLS_eigen_t *cf = &FGLS_eigen_config;
+  FGLS_config_t *cf = loops_t->cf;
 
   int m = cf->m,
 	  n = cf->n,
@@ -88,6 +233,8 @@ void* compute_thread_func(void* in)
   double *y_next = &loops_t->Y[1][id * y_b * n];
   double *b_cur  = &loops_t->B[0][id * p * x_b * y_b];
   double *b_prev = &loops_t->B[1][id * p * x_b * y_b];
+  double *v_cur  = &loops_t->V[0][id * p * p * x_b * y_b];
+  double *v_prev = &loops_t->V[1][id * p * p * x_b * y_b];
   double *h      =  loops_t->h;
   double *sigma  =  loops_t->sigma;
   double *W      =  loops_t->W;
@@ -104,23 +251,29 @@ void* compute_thread_func(void* in)
 
   int ib, jb, i, j, k, l, ll;
   int x_inc, y_inc;
+  double *Bij, *Vij;
   /*int mpb;*/
   /*int mpb_real;*/
   int info;
 
   struct aiocb aiocb_x_cur,  aiocb_x_next,
 			   aiocb_y_cur,  aiocb_y_next,
-			   *aiocb_b_prev, *aiocb_b_cur;
+			   *aiocb_b_prev, *aiocb_b_cur,
+			   *aiocb_v_prev, *aiocb_v_cur;
   double *x_copy = (double *) malloc (x_b * wXR * n * sizeof(double));
 
   aiocb_b_prev = (struct aiocb *) malloc (y_b * sizeof(struct aiocb));
   aiocb_b_cur  = (struct aiocb *) malloc (y_b * sizeof(struct aiocb));
+  aiocb_v_prev = (struct aiocb *) malloc (y_b * sizeof(struct aiocb));
+  aiocb_v_cur  = (struct aiocb *) malloc (y_b * sizeof(struct aiocb));
   struct aiocb **aiocb_x_cur_l,//  = { &aiocb_x_cur }, 
 			         **aiocb_x_next_l,// = { &aiocb_x_next },
 			         **aiocb_y_cur_l,//  = { &aiocb_y_cur },
 			         **aiocb_y_next_l,// = { &aiocb_y_next },
 			         **aiocb_b_prev_l,// = {  aiocb_b_prev },
-			         **aiocb_b_cur_l;//  = {  aiocb_b_cur };
+			         **aiocb_b_cur_l,//  = {  aiocb_b_cur };
+			         **aiocb_v_prev_l,// = {  aiocb_v_prev },
+			         **aiocb_v_cur_l;//  = {  aiocb_v_cur };
 
   aiocb_x_cur_l  = (struct aiocb **) malloc (sizeof(struct aiocb *));
   aiocb_x_next_l = (struct aiocb **) malloc (sizeof(struct aiocb *));
@@ -128,6 +281,8 @@ void* compute_thread_func(void* in)
   aiocb_y_next_l = (struct aiocb **) malloc (sizeof(struct aiocb *));
   aiocb_b_prev_l = (struct aiocb **) malloc (y_b * sizeof(struct aiocb *));
   aiocb_b_cur_l  = (struct aiocb **) malloc (y_b * sizeof(struct aiocb *));
+  aiocb_v_prev_l = (struct aiocb **) malloc (y_b * sizeof(struct aiocb *));
+  aiocb_v_cur_l  = (struct aiocb **) malloc (y_b * sizeof(struct aiocb *));
 
   aiocb_x_cur_l[0]  = &aiocb_x_cur;
   aiocb_x_next_l[0] = &aiocb_x_next;
@@ -137,6 +292,8 @@ void* compute_thread_func(void* in)
   {
 	  aiocb_b_prev_l[i] = &aiocb_b_prev[i];
 	  aiocb_b_cur_l[i]  = &aiocb_b_cur[i];
+	  aiocb_v_prev_l[i] = &aiocb_v_prev[i];
+	  aiocb_v_cur_l[i]  = &aiocb_v_cur[i];
   }
 
   bzero( (char *)&aiocb_x_cur,  sizeof(struct aiocb) );
@@ -145,6 +302,8 @@ void* compute_thread_func(void* in)
   bzero( (char *)&aiocb_y_next, sizeof(struct aiocb) );
   bzero( (char *)aiocb_b_prev, y_b * sizeof(struct aiocb) );
   bzero( (char *)aiocb_b_cur,  y_b * sizeof(struct aiocb) );
+  bzero( (char *)aiocb_v_prev, y_b * sizeof(struct aiocb) );
+  bzero( (char *)aiocb_v_cur,  y_b * sizeof(struct aiocb) );
 
   aiocb_x_cur.aio_fildes = fileno( loops_t->XR_fp );
   aiocb_x_cur.aio_buf = x_cur;
@@ -175,6 +334,13 @@ void* compute_thread_func(void* in)
 	  aiocb_b_cur[i].aio_fildes = fileno( loops_t->B_fp );
 	  /*aiocb_b_cur.aio_flag = AIO_RAW;*/
 	  aiocb_b_cur[i].aio_buf = &b_cur[p * x_b * i];
+
+	  aiocb_v_prev[i].aio_fildes = fileno( loops_t->V_fp );
+	  /*aiocb_v_prev.aio_flag = AIO_RAW;*/
+	  aiocb_v_prev[i].aio_buf = &v_prev[p * p * x_b * i];
+	  aiocb_v_cur[i].aio_fildes = fileno( loops_t->V_fp );
+	  /*aiocb_v_cur.aio_flag = AIO_RAW;*/
+	  aiocb_v_cur[i].aio_buf = &v_cur[p * p * x_b * i];
   }
 
   int iter = 0;
@@ -202,12 +368,18 @@ void* compute_thread_func(void* in)
 	/*aiocb_y.aio_flag = AIO_RAW;*/
 	/*printf("Nbytes: %d\n",  aiocb_y_next_p->aio_nbytes);*/
     aio_read( aiocb_y_next_p );
+#if VAMPIR
+      VT_USER_END("READ_Y");
+#endif
 
+#if VAMPIR
+      VT_USER_START("WAIT_X");
+#endif
 	/*printf("xl value: %f\n", *loops_t->XL[0]);*/
 	for (ll = 0; ll < y_inc; ll++)
 		memcpy( &xl[ll * wXL * n], loops_t->XL[0], wXL * n * sizeof(double) );
 #if VAMPIR
-      VT_USER_START("READ_Y");
+      VT_USER_END("WAIT_X");
 #endif
 #if VAMPIR
     VT_USER_START("WAIT_Y");
@@ -334,32 +506,34 @@ void* compute_thread_func(void* in)
 		  
 		  for (i = 0; i < x_inc; i++)
 		  {
+			  Bij = &b_cur[ j*p*x_inc   + i*p];
+			  Vij = &v_cur[ j*p*p*x_inc + i*p*p];
 			  /*printf("Iter i: %d (%d, %d, %d)\n", i, jb, ib, j);*/
 			  /*int k;*/
 			  /*printf("value: %f\n", b_cur[j * x_inc * p + i*p]);*/
-			  memcpy(&b_cur[j * x_inc * p + i * p], &xl_b[j * wXL], wXL * sizeof(double));
+			  memcpy(Bij, &xl_b[j * wXL], wXL * sizeof(double));
 			  /*printf("value: %f\n", b_cur[j * x_inc * p + i*p]);*/
 			  /*printf("DGEMV( T, %d, %d, %2f, %p, %d, %p, %d, %2f, %p, %d);\n",*/
 			  /*n, wXR, ONE, &x_cur[i * wXR * n], n, y_cur, iONE, ZERO, b_cur[i*p + wXL], iONE);*/
 			  dgemv_("T", 
 					  &n, &wXR, 
 					  &ONE, &x_copy[i * wXR * n], &n, &y_cur[j* n], &iONE, 
-					  &ZERO, &b_cur[j*x_inc*p + i*p + wXL], &iONE);
+					  &ZERO, &Bij[wXL], &iONE);
 			  /*printf("value: %f\n", b_cur[j * x_inc * p + i*p]);*/
 			  /*printf("RHS(%2d, %2d)    = %8f\n", (ib+i)*p+1,   j+1, b_cur[(ib+i)*p]);*/
 			  /*printf("RHS(%2d, %2d)    = %8f\n", (ib+i+1)*p, j+1, b_cur[(ib+i+1)*p-1]);*/
 			  /*printf("Thread: %d - Iterating X(%d) - Solving\n", id, i);*/
 				/* 5) W = XtZWinv * K^T */
 				for( k = 0; k < wXL; k++ )
-					dcopy_(&wXL, &xltxl[j*wXL*wXL + k*wXL], &iONE, &xtSx[k*p], &iONE);
-				dsyrk_("L", "T", 
-						&wXR, &n, 
-						&ONE, &x_copy[i * wXR * n], &n, 
-						&ZERO, &xtSx[wXL * p + wXL], &p);
+					dcopy_(&wXL, &xltxl[j*wXL*wXL + k*wXL], &iONE, &Vij[k*p], &iONE); // TL
 				dgemm_("T", "N", // NO_TRANS, TRANS, 
 						&wXR, &wXL, &n, // m, n, k
 						&ONE, &x_copy[i * wXR * n], &n, &xl[j*wXL*n], &n, // KR KL'
-						&ZERO, &xtSx[wXL], &p); // xtSx BL
+						&ZERO, &Vij[wXL], &p); // xtSx BL
+				dsyrk_("L", "T", 
+						&wXR, &n, 
+						&ONE, &x_copy[i * wXR * n], &n, 
+						&ZERO, &Vij[wXL * p + wXL], &p);
 
 				/*printf("%8f %8f %8f %8f\n", xtSx[0], xtSx[4], xtSx[8], xtSx[12]);*/
 				/*printf("%8f %8f %8f %8f\n", xtSx[1], xtSx[5], xtSx[9], xtSx[13]);*/
@@ -367,12 +541,28 @@ void* compute_thread_func(void* in)
 				/*printf("%8f %8f %8f %8f\n", xtSx[3], xtSx[7], xtSx[11], xtSx[15]);*/
 				/* 8) W^-1 * y */
 				/*printf("value pre dposv: %f\n", b_cur[j * x_inc * p + i*p]);*/
-				dposv_("L", &p, &iONE, xtSx, &p, &b_cur[j*x_inc*p + i*p], &p, &info);
+				dpotrf_(LOWER, &p, Vij, &p, &info);
+				if (info != 0)
+				{
+					fprintf(stderr, __FILE__ ": dposv info: %d\n", info);
+					exit(-1);
+				}
+				dtrsv_(LOWER, NO_TRANS, NON_UNIT, &p, Vij, &p, Bij, &iONE);
+				dtrsv_(LOWER,    TRANS, NON_UNIT, &p, Vij, &p, Bij, &iONE);
+
+				// inv( X' inv(M) X)
+				dpotri_(LOWER, &p, Vij, &p, &info);
+				//int p2 = p*p;
+				//dscal_(&p2, &scorevar, xTSx, &iONE);
+				for ( k = 0; k < p; k++ )
+					Vij[k*p+k] = sqrt(Vij[k*p+k]);
+
+				/* dposv_("L", &p, &iONE, xtSx, &p, Bij, &p, &info);
 				if (info != 0)
 				{
 				  fprintf(stderr, "Error executing dposv (y: %d, x: %d, th: %d): %d\n", jb+j, ib+i, id, info);
 				  exit(-1);
-				}
+				} */
 				/*printf("value post dposv: %f\n", b_cur[j * x_inc * p + i*p]);*/
 				/*if ( i== 0) printf("res[%d, %2d]: %f\n", ib+i, j, *b_cur);*/
 		  }
@@ -396,6 +586,8 @@ void* compute_thread_func(void* in)
 		  {
 			if ( aio_suspend( &aiocb_b_prev_l[k], 1, NULL ) != 0 )
 			  perror("Suspend B error");
+			if ( aio_suspend( &aiocb_v_prev_l[k], 1, NULL ) != 0 )
+			  perror("Suspend V error");
 			/*printf("%d - %d - %p - %d\n", id, aio_error((const struct aiocb*)aiocb_b_prev_l[k]), aiocb_b_prev_l[k], aiocb_b_prev_l[k]->aio_offset);*/
 		  }
 	  }
@@ -409,6 +601,8 @@ void* compute_thread_func(void* in)
       bzero( (char *)aiocb_b_cur, y_inc * sizeof(struct aiocb) );
 	  /*bzero( (char *)aiocb_b_cur_l[0], y_inc * sizeof(struct aiocb) );*/
 	  struct aiocb *aiocb_b_cur_p;
+      bzero( (char *)aiocb_v_cur, y_inc * sizeof(struct aiocb) );
+	  struct aiocb *aiocb_v_cur_p;
 	  for ( k = 0; k < y_inc; k++ )
 	  {
 		  /*aiocb_b_cur_p = &aiocb_b_cur_l[0][k];*/
@@ -425,6 +619,15 @@ void* compute_thread_func(void* in)
 		  /*aiocb_y.aio_flag = AIO_RAW;*/
 		  if ( aio_write( aiocb_b_cur_p ) != 0 )
 			  perror("Error writing b");
+
+		  aiocb_v_cur_p = aiocb_v_cur_l[k];
+		  aiocb_v_cur_p->aio_reqprio = 0;
+		  aiocb_v_cur_p->aio_buf = &v_cur[ k * x_inc * p * p];
+		  aiocb_v_cur_p->aio_fildes = fileno( loops_t->V_fp );
+		  aiocb_v_cur_p->aio_nbytes = x_inc * p * p * sizeof(double);
+		  aiocb_v_cur_p->aio_offset = ((jb+k) * m * p * p + ib * p * p) * sizeof(double);
+		  if ( aio_write( aiocb_v_cur_p ) != 0 )
+			  perror("Error writing v");
 	  }
 #if VAMPIR
       VT_USER_END("WRITE_B");
@@ -434,178 +637,368 @@ void* compute_thread_func(void* in)
 	  swap_buffers( &x_cur, &x_next);
 	  swap_aiocb( &aiocb_b_cur_l, &aiocb_b_prev_l );
 	  swap_buffers( &b_cur, &b_prev);
+	  swap_aiocb( &aiocb_v_cur_l, &aiocb_v_prev_l );
+	  swap_buffers( &v_cur, &v_prev);
 	  iter++;
     }
     gettimeofday(&t1, NULL);
-	/*printf("Iter time: %ld ms\n", get_diff_ms(&t0, &t1));*/
+	if (id == 0)
+	{
+		printf("Iter (%d - %d) time: %ld ms\n", jb, jb+y_inc, get_diff_ms(&t0, &t1));
+		fflush(stdout);
+	}
 	swap_aiocb( &aiocb_y_cur_l, &aiocb_y_next_l );
 	swap_buffers( &y_cur, &y_next);
 	/*prev_y_inc = y_inc;*/
   }
+#if VAMPIR
+      VT_USER_START("WAIT_X");
+#endif
   aio_suspend( aiocb_x_cur_l, 1, NULL );
+#if VAMPIR
+      VT_USER_END("WAIT_X");
+#endif
+#if VAMPIR
+      VT_USER_START("WAIT_Y");
+#endif
   aio_suspend( aiocb_y_cur_l, 1, NULL );
+#if VAMPIR
+      VT_USER_END("WAIT_Y");
+#endif
   /*aio_suspend( aiocb_b_prev_l, 1, NULL );*/
   /*if ( aio_suspend( aiocb_b_prev_l, y_inc, NULL ) != 0 )*/
+#if VAMPIR
+      VT_USER_START("WAIT_B");
+#endif
   for ( i = 0; i < y_inc; i++ )
   {
     if ( aio_suspend( &aiocb_b_prev_l[i], 1, NULL ) != 0 )
       perror("Suspend B error");
+    if ( aio_suspend( &aiocb_v_prev_l[i], 1, NULL ) != 0 )
+      perror("Suspend V error");
 	/*printf("END: %d - %d - %p - %d\n", id, aio_error((const struct aiocb*)aiocb_b_prev_l[i]), aiocb_b_prev_l[i], aiocb_b_prev_l[i]->aio_offset);*/
+  }
+#if VAMPIR
+      VT_USER_END("WAIT_B");
+#endif
+  pthread_exit(NULL);
+}
+
+/* 
+ * Eigendecomposition of Phi
+ *
+ * Z W Z' = Phi
+ */
+void eigenDec(int n, double *Phi, double *Z, double *W)
+{
+	int nb = 192;
+	int idummy, nCompPairs, *isuppz, *iwork, info,
+		lwork = n * (nb + 6),
+		liwork = 10 * n;
+	double ddummy = -1.0, *work;
+
+	work   = (double *) malloc ( lwork * sizeof(double) );
+	iwork  = (int *)    malloc ( liwork * sizeof(int) );
+	isuppz = (int *)    malloc ( 2 * n * sizeof(int) );
+
+	dsyevr_("V", "A", "L", &n, Phi, &n, 
+			&ddummy, &ddummy, &idummy, &idummy, &ddummy, 
+			&nCompPairs, W, Z, &n, isuppz, 
+			work, &lwork, iwork, &liwork, &info);
+
+	if (info != 0) 
+	{
+		fprintf(stderr, __FILE__ ": Error while decomposing Phi\n");
+		exit(-1);
+	}
+}
+
+void* ooc_gemm_io( void *in ) 
+{
+  DEF_TIMING();
+
+  ooc_gemm_t *gemm_t = ( ooc_gemm_t* )in;
+#if TIMING
+  FGLS_eigen_t *cf = &FGLS_eigen_config;
+#endif
+  double *in_cur   = gemm_t->in[0];
+  double *in_next  = gemm_t->in[1];
+  double *out_prev = gemm_t->out[0];
+  double *out_cur  = gemm_t->out[1];
+
+  int m = gemm_t->m,
+	  n = gemm_t->n,
+	  k = gemm_t->k,
+	  cols_per_buff = gemm_t->n_cols_per_buff;
+  long int max_elems = cols_per_buff * m;
+
+  int i;
+
+  /*printf("io m: %d\n", m);*/
+  /*printf("io n: %d\n", n);*/
+  /*printf("io k: %d\n", k);*/
+  BEGIN_TIMING();
+  sync_read( in_cur, gemm_t->fp_in, MIN( max_elems, k * n ), 0 );
+  END_TIMING(cf->time->io_time);
+
+  sem_post( &gemm_t->sem_comp );
+
+  /*printf("m: %d\n", m);*/
+  /*printf("n: %d\n", n);*/
+  /*printf("k: %d\n", k);*/
+  /*printf("n_cols: %d\n", cols_per_buff);*/
+  /*printf("chunk:: %d\n", chunk_size);*/
+  for ( i = 0; i < n; i += cols_per_buff ) 
+  {
+    swap_buffers(&in_cur, &in_next);
+    
+    BEGIN_TIMING();
+    sync_read( in_cur, gemm_t->fp_in, 
+			i + cols_per_buff > n ? 0 : MIN( max_elems, ( n - ( i + cols_per_buff ) ) * k ), 
+			(i + cols_per_buff) * k );
+    END_TIMING(cf->time->io_time);
+
+    sem_post( &gemm_t->sem_comp );
+    
+    BEGIN_TIMING();
+    sem_wait( &gemm_t->sem_io );
+    END_TIMING(cf->time->io_mutex_wait_time);
+
+    BEGIN_TIMING();
+	/*printf("Writing: %f\n", out_prev[0]);*/
+	/*printf("Writing: %f\n", out_prev[MIN( max_elems, (n - i) * m )-1]);*/
+    sync_write( out_prev, gemm_t->fp_out, MIN( max_elems, (n - i) * m ), i * m);
+	/*fflush( gemm_t->fp_out );*/
+    END_TIMING(cf->time->io_time);
+    swap_buffers( &out_prev, &out_cur );
   }
   pthread_exit(NULL);
 }
 
-/*
- * Entry point for the solution of the Feasible Generalized Least-Squares problem
- */
-int fgls_eigen( FGLS_eigen_t *cf ) 
+void* ooc_gemm_comp( void *in ) 
 {
-  int rc, i;
-  pthread_t *compute_threads;
+  DEF_TIMING();
 
-  double *Phi,
-		 *Z;
-		 /**W;*/
-  FILE *Phi_fp,
-	   *h_fp, *sigma_fp,
-	   *XL_fp;
-  ooc_loops_t loops_t;
-  ooc_loops_t *loops_t_comp;
+  ooc_gemm_t *gemm_t = ( ooc_gemm_t *)in;
+#if TIMING
+  FGLS_eigen_t *cf = &FGLS_eigen_config;
+#endif
 
-  /*sprintf(str_buf, "%s/X.in", dir);*/
-  /*x_file = fopen(str_buf, "rb");*/
-  /*if(!x_file) {*/
-  /*printf("error opening x_file(%s)! exiting...\n", str_buf);*/
-  /*exit(-1);*/
-  /*}*/
+  double *in_cur   = gemm_t->in[0];
+  double *in_next  = gemm_t->in[1];
+  double *out_cur  = gemm_t->out[0];
+  double *out_next = gemm_t->out[1];
 
+  int m = gemm_t->m,
+	  n = gemm_t->n,
+	  k = gemm_t->k,
+	  n_cols_per_buff = gemm_t->n_cols_per_buff;
 
-  for (i = 0; i < NUM_BUFFERS_PER_THREAD; i++) 
+  double ONE  = 1.0;
+  double ZERO = 0.0;
+
+  int cur_n;
+  int i;
+  /*printf("m: %d\n", m);*/
+  /*printf("n: %d\n", n);*/
+  /*printf("k: %d\n", k);*/
+  for ( i = 0; i < n; i += n_cols_per_buff ) 
   {
-    loops_t.X[i] = ( double* ) malloc ( cf->NUM_COMPUTE_THREADS * cf->x_b * cf->p * cf->n * sizeof(double) );
-    loops_t.Y[i] = ( double* ) malloc ( cf->NUM_COMPUTE_THREADS * cf->y_b * cf->n * sizeof(double) );
-    loops_t.B[i] = ( double* ) malloc ( cf->NUM_COMPUTE_THREADS * cf->x_b * cf->y_b * cf->p * sizeof(double) );
+	  /*printf("computing from col: %d\n", i);*/
+    BEGIN_TIMING();
+    sem_wait( &gemm_t->sem_comp );
+    END_TIMING(cf->time->comp_mutex_wait_time);
+	/*printf("computing from col(2): %d\n", i);*/
+
+    BEGIN_TIMING();
+	cur_n = MIN( n_cols_per_buff, (n - i) );
+    dgemm_("T", "N", &m, &cur_n, &k, &ONE, gemm_t->Z, &m, in_cur, &m, &ZERO, out_cur, &m);
+    END_TIMING(cf->time->compute_time);
+
+    sem_post( &gemm_t->sem_io );
+    swap_buffers( &in_cur,  &in_next );
+    swap_buffers( &out_cur, &out_next );
   }
-  // The original in XL[0]
-  // The copy to overwrite in XL[1]
-  loops_t.XL[0] = ( double* ) malloc ( cf->wXL * cf->n * sizeof(double) );
-  loops_t.XL[1] = ( double* ) malloc ( cf->NUM_COMPUTE_THREADS * cf->wXL * cf->n * cf->y_b * sizeof(double) );
-  loops_t.XL_b  = ( double* ) malloc ( cf->NUM_COMPUTE_THREADS * cf->wXL * cf->y_b * sizeof(double) );
-  loops_t.XLtXL = ( double* ) malloc ( cf->NUM_COMPUTE_THREADS * cf->wXL * cf->wXL * cf->y_b * sizeof(double) );
+  pthread_exit(NULL);
+}
 
-  loops_t.h = ( double* ) malloc ( cf->t * sizeof(double) );
-  loops_t.sigma = ( double* ) malloc ( cf->t * sizeof(double) );
-  Phi = ( double* ) malloc ( cf->n * cf->n * sizeof(double) );
-  loops_t.W = ( double* ) malloc ( cf->n * sizeof(double) );
-  Z   = ( double* ) malloc ( cf->n * cf->n * sizeof(double) );
+int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W) 
+{
+  DEF_TIMING();
 
-  loops_t.alpha   = ( double* ) malloc ( cf->NUM_COMPUTE_THREADS * cf->y_b * sizeof(double) );
-  loops_t.beta    = ( double* ) malloc ( cf->NUM_COMPUTE_THREADS * cf->y_b * sizeof(double) );
-  loops_t.Winv    = ( double* ) malloc ( cf->NUM_COMPUTE_THREADS * cf->x_b * cf->n * sizeof(double) );
-  loops_t.xtSx    = ( double* ) malloc ( cf->NUM_COMPUTE_THREADS * cf->p * cf->p * sizeof(double) );
+  int iret;
+  void *vret;
+  pthread_t io_thread;
+  pthread_t compute_thread;
+  ooc_gemm_t gemm_t;
+  long GB = 1L << 24;
 
-  if (loops_t.xtSx == NULL)
+  /*FGLS_eigen_t *cf = &FGLS_eigen_config;*/
+
+  long int chunk_size = GB - GB % (cf->n * sizeof(double));
+  int num_cols = chunk_size / (cf->n * sizeof(double));
+  /*printf("Chunk: %ld MB\n", chunk_size >> 20);*/
+  /*printf("numcols: %ld\n", num_cols);*/
+
+  /*int fd_in, fd_out;*/
+
+  /*printf("chunk size: %d\n", chunk_size);*/
+  /*printf("Num cols: %d\n", num_cols);*/
+  /*printf("n: %d\n", cf->n);;*/
+
+  /*printf("Z[0]: %f\n", Z[0]);*/
+
+  /* Z W Z' = Phi */
+  printf("\nEigendecomposition of Phi...");
+  fflush(stdout);
+  BEGIN_TIMING();
+  eigenDec( cf->n, Phi, Z, W );
+  END_TIMING(cf->time->compute_time);
+  printf(" Done\n");
+
+  gemm_t.in[0]  = ( double* ) malloc ( chunk_size * sizeof(double) );
+  gemm_t.in[1]  = ( double* ) malloc ( chunk_size * sizeof(double) );
+  gemm_t.out[0] = ( double* ) malloc ( chunk_size * sizeof(double) );
+  gemm_t.out[1] = ( double* ) malloc ( chunk_size * sizeof(double) );
+  if (gemm_t.out[1] == NULL)
   {
-	  fprintf(stderr, __FILE__ ": Error, not enough memory\n");
+	  fprintf(stderr, "Not enough memory for OOC gemm's\n");
 	  exit(EXIT_FAILURE);
   }
 
-#if VAMPIR
-  VT_USER_START("PRELOOP");
-#endif
-  Phi_fp = fopen( cf->Phi_path, "rb" );
-  sync_read( Phi, Phi_fp, cf->n * cf->n, 0 );
-  setenv("OMP_NUM_THREADS", "7", 1);
-  preloop(Phi, Z, loops_t.W);
-  setenv("OMP_NUM_THREADS", "1", 1);
-  free( Phi );
-  free( Z );
-  fclose( Phi_fp );
-#if VAMPIR
-  VT_USER_END("PRELOOP");
-#endif
-  loops_t.XR_fp = fopen( cf->ZtXR_path, "rb");
-  loops_t.Y_fp = fopen( cf->ZtY_path, "rb");
-  loops_t.B_fp = fopen( cf->B_path, "wb");
+  /* OOC gemms */
+  printf("Computing Z' XL...");
+  fflush(stdout);
+  gemm_t.Z = Z;
 
-  XL_fp = fopen( cf->ZtXL_path, "rb" );
-  sync_read( loops_t.XL[0], XL_fp, cf->wXL * cf->n, 0 );
-  fclose( XL_fp );
-  /*if(!x_file) {*/
-  /*printf("error opening x_file(%s)! exiting...\n", str_buf);*/
-  /*exit(-1);*/
-  /*}*/
+  gemm_t.m = cf->n;
+  gemm_t.n = cf->wXL;
+  gemm_t.k = cf->n;
+  gemm_t.n_cols_per_buff = num_cols;
+  gemm_t.fp_in  = fopen( cf->XL_path, "rb" );
+  gemm_t.fp_out = fopen( cf->ZtXL_path, "wb" );
+  /*fd_in  = open( cf->X_path, O_RDONLY | O_SYNC );*/
+  /*fd_out = open( cf->ZtX_path, O_WRONLY | O_CREAT | O_SYNC );*/
+  /*gemm_t.fp_in  = fdopen( fd_in,  "rb" );*/
+  /*gemm_t.fp_out = fdopen( fd_out, "wb" );*/
+  sem_init( &gemm_t.sem_io,   0, 0 );
+  sem_init( &gemm_t.sem_comp, 0, 0 );
 
-  /*printf("starting compute and io threads\n");*/
-
-#if VAMPIR
-  VT_USER_START("LOOPS");
-#endif
-  h_fp = fopen( cf->h_path, "r");
-  sync_read(loops_t.h, h_fp, cf->t, 0);
-  fclose( h_fp );
-  sigma_fp = fopen( cf->sigma_path, "r");
-  sync_read(loops_t.sigma, sigma_fp, cf->t, 0);
-  fclose( sigma_fp );
-
-  printf("LOOPS\n");
-
-  loops_t_comp = ( ooc_loops_t* ) malloc ( cf->NUM_COMPUTE_THREADS * sizeof(ooc_loops_t) );
-  compute_threads = ( pthread_t * ) malloc ( cf->NUM_COMPUTE_THREADS * sizeof(pthread_t) );
-  if (compute_threads == NULL)
+  iret = pthread_create(&io_thread, NULL, ooc_gemm_io, (void*)&gemm_t);
+  if (iret)
   {
-	  fprintf(stderr, "Not enough memory\n");
-	  exit(EXIT_FAILURE);
+    fprintf(stderr, __FILE__ ": Error creating IO thread (1): %d\n", iret);
+    exit(EXIT_FAILURE);
   }
-  for (i = 0; i < cf->NUM_COMPUTE_THREADS; i++) 
+  iret = pthread_create(&compute_thread, NULL, ooc_gemm_comp, (void*)&gemm_t);
+  if (iret)
   {
-    memcpy((void*)&loops_t_comp[i], (void*)&loops_t, sizeof(ooc_loops_t));    
-    loops_t_comp[i].id = i;
-
-    rc = pthread_create(&compute_threads[i], NULL, compute_thread_func, (void*)&loops_t_comp[i]);
-    if (rc) 
-	{
-      fprintf(stderr, "ERROR in " __FILE__ ": pthread_create() returned %d\n", rc);
-      pthread_exit(NULL);
-    }
+    fprintf(stderr, __FILE__ ": Error creating Computation thread (1): %d\n", iret);
+    exit(EXIT_FAILURE);
   }
 
-  void* retval;
-  for (i = 0; i < cf->NUM_COMPUTE_THREADS; i++)
-    pthread_join(compute_threads[i], &retval);
-#if VAMPIR
-  VT_USER_START("END");
-#endif
+  pthread_join(io_thread, &vret);
+  pthread_join(compute_thread, &vret);
 
-  printf("LOOPS Done\n");
+  /*printf("Closing files\n"); */
+  /*printf("Closing input\n"); */
+  fclose( gemm_t.fp_in );
+  /*printf("Closing output\n"); */
+  fclose( gemm_t.fp_out );
+  /*printf("Closed\n"); */
 
-  fclose( loops_t.XR_fp );
-  fclose( loops_t.Y_fp );
-  fclose( loops_t.B_fp );
+  printf(" Done\n");
 
-  for (i = 0; i < NUM_BUFFERS_PER_THREAD; i++) 
+  printf("Computing Z' XR...");
+  fflush(stdout);
+
+  /*chunk_size = MIN ( 1L<<19 - (1L << 19 % cf->n), cf->m * cf->wXR * cf->n );*/
+  /*num_cols = chunk_size / cf->n;*/
+
+  gemm_t.Z = Z;
+  /*gemm_t.in[0]  = ( double* ) malloc ( chunk_size * sizeof(double) );*/
+  /*gemm_t.in[1]  = ( double* ) malloc ( chunk_size * sizeof(double) );*/
+  /*gemm_t.out[0] = ( double* ) malloc ( chunk_size * sizeof(double) );*/
+  /*gemm_t.out[1] = ( double* ) malloc ( chunk_size * sizeof(double) );*/
+
+  gemm_t.m = cf->n;
+  gemm_t.n = cf->m * cf->wXR;
+  gemm_t.k = cf->n;
+  gemm_t.n_cols_per_buff = num_cols;
+  gemm_t.fp_in  = fopen( cf->XR_path, "rb" );
+  gemm_t.fp_out = fopen( cf->ZtXR_path, "wb" );
+
+  sem_init( &gemm_t.sem_io,   0, 0 );
+  sem_init( &gemm_t.sem_comp, 0, 0 );
+
+  iret = pthread_create(&io_thread, NULL, ooc_gemm_io, (void*)&gemm_t);
+  if (iret)
   {
-	  free( loops_t.X[i] );
-	  free( loops_t.Y[i] );
-	  free( loops_t.B[i] );
+    fprintf(stderr, __FILE__ ": Error creating IO thread (2): %d\n", iret);
+    exit(EXIT_FAILURE);
   }
-  free( loops_t.XL[0] );
-  free( loops_t.XL[1] );
-  free( loops_t.XL_b  );
-  free( loops_t.XLtXL );
+  iret = pthread_create(&compute_thread, NULL, ooc_gemm_comp, (void*)&gemm_t);
+  if (iret)
+  {
+    fprintf(stderr, __FILE__ ": Error creating Computation thread (2): %d\n", iret);
+    exit(EXIT_FAILURE);
+  }
 
-  free( loops_t.h );
-  free( loops_t.sigma );
-  free( loops_t.W );
+  pthread_join(io_thread, &vret);
+  pthread_join(compute_thread, &vret);
 
-  free( loops_t.alpha );
-  free( loops_t.beta );
-  free( loops_t.Winv );
-  free( loops_t.xtSx );
+  /*printf("Closing files\n"); */
+  /*printf("Closing input\n"); */
+  fclose( gemm_t.fp_in );
+  /*printf("Closing output\n"); */
+  fclose( gemm_t.fp_out );
+  /*printf("Closed\n"); */
 
-  free( loops_t_comp );
-  free( compute_threads );
+  printf(" Done\n");
 
+  /*chunk_size = MIN ( 1L<<19 - (1L << 19 % cf->n), cf->t * cf->n );*/
+  /*num_cols = chunk_size / cf->n;*/
+
+  gemm_t.m = cf->n;
+  gemm_t.n = cf->t;
+  gemm_t.k = cf->n;
+  gemm_t.n_cols_per_buff = num_cols;
+  gemm_t.fp_in  = fopen( cf->Y_path, "rb" );
+  gemm_t.fp_out = fopen( cf->ZtY_path, "wb" );
+
+  sem_init( &gemm_t.sem_io,   0, 0 );
+  sem_init( &gemm_t.sem_comp, 0, 0 );
+
+  printf("Computing Z' Y...");
+  fflush(stdout);
+  iret = pthread_create(&io_thread, NULL, ooc_gemm_io, (void*)&gemm_t);
+  if (iret)
+  {
+    fprintf(stderr, __FILE__ ": Error creating IO thread (3): %d\n", iret);
+    exit(EXIT_FAILURE);
+  }
+  iret = pthread_create(&compute_thread, NULL, ooc_gemm_comp, (void*)&gemm_t);
+  if (iret)
+  {
+    fprintf(stderr, __FILE__ ": Error creating Computation thread (3): %d\n", iret);
+    exit(EXIT_FAILURE);
+  }
+
+  pthread_join(io_thread, &vret);
+  pthread_join(compute_thread, &vret);
+
+  fclose( gemm_t.fp_in );
+  fclose( gemm_t.fp_out );
+
+  printf(" Done\n");
+
+  free(gemm_t.in[0]);
+  free(gemm_t.in[1]);
+  free(gemm_t.out[0]);
+  free(gemm_t.out[1]);
+
+  sem_destroy( &gemm_t.sem_io );
+  sem_destroy( &gemm_t.sem_comp );
 
   return 0;
 }

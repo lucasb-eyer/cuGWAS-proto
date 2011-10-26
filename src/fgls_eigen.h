@@ -1,46 +1,63 @@
 #ifndef FGLS_EIGEN_H
 #define FGLS_EIGEN_H
 
-#define MIN(x,y) ( (x) < (y) ? (x) : (y) )
-#define STR_BUFFER_SIZE 256
+#include <semaphore.h>
 
-#include "timing.h"
+#include "common.h"
+/*#include "timing.h"*/
 
-typedef struct
+#define NUM_BUFFERS_PER_THREAD 2
+
+typedef struct {
+	FILE *XR_fp;
+	FILE *Y_fp;
+	FILE *B_fp;
+	FILE *V_fp;
+	double *XL[2];
+	double *XL_b;
+	double *XLtXL;
+
+	double *X[NUM_BUFFERS_PER_THREAD];
+	double *Y[NUM_BUFFERS_PER_THREAD];
+	double *B[NUM_BUFFERS_PER_THREAD];
+	double *V[NUM_BUFFERS_PER_THREAD];
+
+	double *h;
+	double *sigma;
+	double *W;
+	double *alpha;
+	double *beta;
+	double *Winv;
+	double *xtSx;
+
+	FGLS_config_t *cf;
+
+	int id;
+} ooc_loops_t;
+
+typedef struct 
 {
-  char XL_path[STR_BUFFER_SIZE];
-  char XR_path[STR_BUFFER_SIZE];
-  char ZtXL_path[STR_BUFFER_SIZE];
-  char ZtXR_path[STR_BUFFER_SIZE];
-  char Y_path[STR_BUFFER_SIZE];
-  char ZtY_path[STR_BUFFER_SIZE];
-  char Phi_path[STR_BUFFER_SIZE];
-  char h_path[STR_BUFFER_SIZE];
-  char sigma_path[STR_BUFFER_SIZE];
-  char B_path[STR_BUFFER_SIZE];
+	double *Z;
+	FILE *fp_in;
+	FILE *fp_out;
+	int m, n, k;
+	long int n_cols_per_buff;
+	double *in[2];
+	double *out[2];
+	sem_t sem_io;
+	sem_t sem_comp;
+} ooc_gemm_t;
 
-  int n;
-  int p; // total width of X
-  int m;
-  int t;
-  int wXL; // width of XL
-  int wXR; // width of XR
-  int x_b;
-  int y_b;
+/*FGLS_eigen_t FGLS_eigen_config;*/
 
-  int NUM_COMPUTE_THREADS;
-  /*int NUM_BUFFERS_PER_THREAD;*/
+int fgls_eigen(
+		int n, int p, int m, int t, int wXL, int wXR,
+        int x_b, int y_b, int num_threads,
+		char *Phi_path, char *h2_path, char *sigma2_path,
+		char *XL_path, char *XR_path, char *Y_path,
+		char *B_path, char *V_path
+);
+/*int  fgls_eigen( FGLS_eigen_t *cf );*/
+/*int  preloop(double *Phi, double *Z, double *W);*/
 
-#if TIMING
-  timing* time;
-#endif // TIMING
-
-} FGLS_eigen_t;
-
-FGLS_eigen_t FGLS_eigen_config;
-
-int  fgls_eigen( FGLS_eigen_t *cf );
-int  preloop(double *Phi, double *Z, double *W);
-void swap_buffers(double** b1, double** b2);
-
-#endif // FGLS_H
+#endif // FGLS_EIGEN_H

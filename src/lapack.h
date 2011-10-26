@@ -6,6 +6,10 @@ extern void dpotrf_(char *uplo,
 					int *n, double *A, int *ldA, 
 			 		int *info);
 
+extern void dpotri_(char *uplo, 
+					int *n, double *A, int *ldA, 
+			 		int *info);
+
 /* Triangular inverse */
 extern void dtrtri_(char *uplo, char *diag, 
 					int *n, double *A, int *ldA, 
