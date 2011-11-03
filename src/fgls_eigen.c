@@ -65,6 +65,12 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
   ooc_loops_t loops_t;
   ooc_loops_t *loops_t_comp;
 
+  printf("n: %d\np: %d\nm: %d\nt: %d\nwXL: %d\nwXR: %d\n", n, p, m, t, wXL, wXR);
+  printf("x_b: %d\ny_b: %d\nnths: %d\n", x_b, y_b, num_threads);
+  printf("Phi: %s\nh2: %s\ns2: %s\n", cf.Phi_path, cf.h_path, cf.sigma_path);
+  printf("XL: %s\nXR: %s\nY: %s\n", cf.XL_path, cf.XR_path, cf.Y_path);
+  printf("B: %s\nV: %s\n", cf.B_path, cf.V_path);
+
   /*sprintf(str_buf, "%s/X.in", dir);*/
   /*x_file = fopen(str_buf, "rb");*/
   /*if(!x_file) {*/
@@ -72,17 +78,27 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
   /*exit(-1);*/
   /*}*/
 
-  Phi = ( double* ) malloc ( cf.n * cf.n * sizeof(double) );
-  loops_t.W = ( double* ) malloc ( cf.n * sizeof(double) );
-  Z   = ( double* ) malloc ( cf.n * cf.n * sizeof(double) );
+  Phi = ( double * ) malloc ( cf.n * cf.n * sizeof(double) );
+  loops_t.W = ( double * ) malloc ( cf.n * sizeof(double) );
+  Z   = ( double * ) malloc ( cf.n * cf.n * sizeof(double) );
+  if ( Z == NULL )
+  {
+	  fprintf( stderr, "Not enough memory for Z\n" );
+	  exit( EXIT_FAILURE );
+  }
 #if VAMPIR
   VT_USER_START("PRELOOP");
 #endif
+  /*printf("Phi: %x\n", Phi);*/
+  /*printf("Phi file: %s\n", cf.Phi_path);*/
   Phi_fp = fopen( cf.Phi_path, "rb" );
+  /*printf("%x\n", Phi_fp);*/
   sync_read( Phi, Phi_fp, cf.n * cf.n, 0 );
   setenv("OMP_NUM_THREADS", "7", 1);
+  /*setenv("GOTO_NUM_THREADS", "7", 1);*/
   preloop(&cf, Phi, Z, loops_t.W);
   setenv("OMP_NUM_THREADS", "1", 1);
+  /*setenv("GOTO_NUM_THREADS", "1", 1);*/
   free( Phi );
   free( Z );
   fclose( Phi_fp );
@@ -544,7 +560,7 @@ void* compute_thread_func(void* in)
 				dpotrf_(LOWER, &p, Vij, &p, &info);
 				if (info != 0)
 				{
-					fprintf(stderr, __FILE__ ": dposv info: %d\n", info);
+					fprintf(stderr, __FILE__ ": dpotrf info: %d - iter (%d, %d)\n", info, ib+i, jb+j);
 					exit(-1);
 				}
 				dtrsv_(LOWER, NO_TRANS, NON_UNIT, &p, Vij, &p, Bij, &iONE);
@@ -684,6 +700,165 @@ void* compute_thread_func(void* in)
   pthread_exit(NULL);
 }
 
+int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W) 
+{
+  DEF_TIMING();
+
+  /* Threads for ooc gemms */
+  pthread_t io_thread;
+  pthread_t compute_thread;
+  ooc_gemm_t gemm_t;
+  int iret;
+
+  /* Buffer sizes for ooc gemms */
+  long int chunk_size = 1L << 28; // 256 MElems
+  chunk_size = chunk_size - chunk_size % (cf->n * sizeof(double));
+  int num_cols = chunk_size / (cf->n * sizeof(double));
+
+  /* Z W Z' = Phi */
+  printf("\nEigendecomposition of Phi...");
+  fflush(stdout);
+  
+  BEGIN_TIMING();
+  eigenDec( cf->n, Phi, Z, W );
+  END_TIMING(cf->time->compute_time);
+  printf(" Done\n");
+
+  /* OOC gemms */
+  gemm_t.in[0]  = ( double * ) malloc ( chunk_size * sizeof(double) );
+  gemm_t.in[1]  = ( double * ) malloc ( chunk_size * sizeof(double) );
+  gemm_t.out[0] = ( double * ) malloc ( chunk_size * sizeof(double) );
+  gemm_t.out[1] = ( double * ) malloc ( chunk_size * sizeof(double) );
+  if ( gemm_t.out[1] == NULL )
+  {
+	  fprintf(stderr, "Not enough memory for OOC gemm's\n");
+	  exit(EXIT_FAILURE);
+  }
+
+  printf("Computing Z' XL...");
+  fflush(stdout);
+
+  gemm_t.Z = Z;
+
+  gemm_t.m = cf->n;
+  gemm_t.n = cf->wXL;
+  gemm_t.k = cf->n;
+  gemm_t.n_cols_per_buff = num_cols;
+  gemm_t.fp_in  = fopen( cf->XL_path, "rb" );
+  gemm_t.fp_out = fopen( cf->ZtXL_path, "wb" );
+  /*fd_in  = open( cf->X_path, O_RDONLY | O_SYNC );*/
+  /*fd_out = open( cf->ZtX_path, O_WRONLY | O_CREAT | O_SYNC );*/
+  /*gemm_t.fp_in  = fdopen( fd_in,  "rb" );*/
+  /*gemm_t.fp_out = fdopen( fd_out, "wb" );*/
+  sem_init( &gemm_t.sem_io,   0, 0 );
+  sem_init( &gemm_t.sem_comp, 0, 0 );
+
+  iret = pthread_create(&io_thread, NULL, ooc_gemm_io, (void*)&gemm_t);
+  if (iret)
+  {
+    fprintf(stderr, __FILE__ ": Error creating IO thread (1): %d\n", iret);
+    exit(EXIT_FAILURE);
+  }
+  iret = pthread_create(&compute_thread, NULL, ooc_gemm_comp, (void*)&gemm_t);
+  if (iret)
+  {
+    fprintf(stderr, __FILE__ ": Error creating Computation thread (1): %d\n", iret);
+    exit(EXIT_FAILURE);
+  }
+
+  pthread_join(io_thread, NULL);
+  pthread_join(compute_thread, NULL);
+
+  /*printf("Closing files\n"); */
+  /*printf("Closing input\n"); */
+  fclose( gemm_t.fp_in );
+  /*printf("Closing output\n"); */
+  fclose( gemm_t.fp_out );
+  /*printf("Closed\n"); */
+
+  printf(" Done\n");
+
+  printf("Computing Z' XR...");
+  fflush(stdout);
+
+  /*gemm_t.Z = Z;*/
+
+  gemm_t.m = cf->n;
+  gemm_t.n = cf->m * cf->wXR;
+  gemm_t.k = cf->n;
+  gemm_t.n_cols_per_buff = num_cols;
+  gemm_t.fp_in  = fopen( cf->XR_path, "rb" );
+  gemm_t.fp_out = fopen( cf->ZtXR_path, "wb" );
+
+  sem_init( &gemm_t.sem_io,   0, 0 );
+  sem_init( &gemm_t.sem_comp, 0, 0 );
+
+  iret = pthread_create(&io_thread, NULL, ooc_gemm_io, (void*)&gemm_t);
+  if (iret)
+  {
+    fprintf(stderr, __FILE__ ": Error creating IO thread (2): %d\n", iret);
+    exit(EXIT_FAILURE);
+  }
+  iret = pthread_create(&compute_thread, NULL, ooc_gemm_comp, (void*)&gemm_t);
+  if (iret)
+  {
+    fprintf(stderr, __FILE__ ": Error creating Computation thread (2): %d\n", iret);
+    exit(EXIT_FAILURE);
+  }
+
+  pthread_join(io_thread, NULL);
+  pthread_join(compute_thread, NULL);
+
+  fclose( gemm_t.fp_in );
+  fclose( gemm_t.fp_out );
+
+  printf(" Done\n");
+
+  printf("Computing Z' Y...");
+  fflush(stdout);
+
+  gemm_t.m = cf->n;
+  gemm_t.n = cf->t;
+  gemm_t.k = cf->n;
+  gemm_t.n_cols_per_buff = num_cols;
+  gemm_t.fp_in  = fopen( cf->Y_path, "rb" );
+  gemm_t.fp_out = fopen( cf->ZtY_path, "wb" );
+
+  sem_init( &gemm_t.sem_io,   0, 0 );
+  sem_init( &gemm_t.sem_comp, 0, 0 );
+
+  iret = pthread_create(&io_thread, NULL, ooc_gemm_io, (void*)&gemm_t);
+  if (iret)
+  {
+    fprintf(stderr, __FILE__ ": Error creating IO thread (3): %d\n", iret);
+    exit(EXIT_FAILURE);
+  }
+  iret = pthread_create(&compute_thread, NULL, ooc_gemm_comp, (void*)&gemm_t);
+  if (iret)
+  {
+    fprintf(stderr, __FILE__ ": Error creating Computation thread (3): %d\n", iret);
+    exit(EXIT_FAILURE);
+  }
+
+  pthread_join(io_thread, NULL);
+  pthread_join(compute_thread, NULL);
+
+  fclose( gemm_t.fp_in );
+  fclose( gemm_t.fp_out );
+
+  printf(" Done\n");
+
+  free(gemm_t.in[0]);
+  free(gemm_t.in[1]);
+  free(gemm_t.out[0]);
+  free(gemm_t.out[1]);
+
+  sem_destroy( &gemm_t.sem_io );
+  sem_destroy( &gemm_t.sem_comp );
+
+  return 0;
+}
+
 /* 
  * Eigendecomposition of Phi
  *
@@ -692,7 +867,7 @@ void* compute_thread_func(void* in)
 void eigenDec(int n, double *Phi, double *Z, double *W)
 {
 	int nb = 192;
-	int idummy, nCompPairs, *isuppz, *iwork, info,
+	int idummy, nCompPairs, *isuppz, *iwork, info = 0,
 		lwork = n * (nb + 6),
 		liwork = 10 * n;
 	double ddummy = -1.0, *work;
@@ -701,10 +876,32 @@ void eigenDec(int n, double *Phi, double *Z, double *W)
 	iwork  = (int *)    malloc ( liwork * sizeof(int) );
 	isuppz = (int *)    malloc ( 2 * n * sizeof(int) );
 
+	if ( isuppz == NULL )
+	{
+		fprintf( stderr, __FILE__ "Not enough memory\n" );
+		exit( EXIT_FAILURE );
+	}
+
+	/*printf("Phi: %p\n", Phi);*/
+	/*printf("Z: %p\n", Z);*/
+	/*printf("W: %p\n", W);*/
+	/*printf("n: %d\n", n);*/
+	/**//*printf("idummy: %d\n", idummy);*/
+	/*printf("ddummy: %f\n", ddummy);*/
+	/**//*printf("comp: %d\n", nCompPairs);*/
+	/*printf("lwork: %d\n", lwork);*/
+	/*printf("liwork: %d\n", liwork);*/
+	/*printf("isuppz: %p\n", isuppz);*/
+	/*printf("work: %p\n", work);*/
+	/*printf("iwork: %p\n", iwork);*/
+
 	dsyevr_("V", "A", "L", &n, Phi, &n, 
 			&ddummy, &ddummy, &idummy, &idummy, &ddummy, 
 			&nCompPairs, W, Z, &n, isuppz, 
 			work, &lwork, iwork, &liwork, &info);
+
+	printf("Info: %d\n", info);
+	fflush( stdin );
 
 	if (info != 0) 
 	{
@@ -820,185 +1017,4 @@ void* ooc_gemm_comp( void *in )
     swap_buffers( &out_cur, &out_next );
   }
   pthread_exit(NULL);
-}
-
-int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W) 
-{
-  DEF_TIMING();
-
-  int iret;
-  void *vret;
-  pthread_t io_thread;
-  pthread_t compute_thread;
-  ooc_gemm_t gemm_t;
-  long GB = 1L << 24;
-
-  /*FGLS_eigen_t *cf = &FGLS_eigen_config;*/
-
-  long int chunk_size = GB - GB % (cf->n * sizeof(double));
-  int num_cols = chunk_size / (cf->n * sizeof(double));
-  /*printf("Chunk: %ld MB\n", chunk_size >> 20);*/
-  /*printf("numcols: %ld\n", num_cols);*/
-
-  /*int fd_in, fd_out;*/
-
-  /*printf("chunk size: %d\n", chunk_size);*/
-  /*printf("Num cols: %d\n", num_cols);*/
-  /*printf("n: %d\n", cf->n);;*/
-
-  /*printf("Z[0]: %f\n", Z[0]);*/
-
-  /* Z W Z' = Phi */
-  printf("\nEigendecomposition of Phi...");
-  fflush(stdout);
-  BEGIN_TIMING();
-  eigenDec( cf->n, Phi, Z, W );
-  END_TIMING(cf->time->compute_time);
-  printf(" Done\n");
-
-  gemm_t.in[0]  = ( double* ) malloc ( chunk_size * sizeof(double) );
-  gemm_t.in[1]  = ( double* ) malloc ( chunk_size * sizeof(double) );
-  gemm_t.out[0] = ( double* ) malloc ( chunk_size * sizeof(double) );
-  gemm_t.out[1] = ( double* ) malloc ( chunk_size * sizeof(double) );
-  if (gemm_t.out[1] == NULL)
-  {
-	  fprintf(stderr, "Not enough memory for OOC gemm's\n");
-	  exit(EXIT_FAILURE);
-  }
-
-  /* OOC gemms */
-  printf("Computing Z' XL...");
-  fflush(stdout);
-  gemm_t.Z = Z;
-
-  gemm_t.m = cf->n;
-  gemm_t.n = cf->wXL;
-  gemm_t.k = cf->n;
-  gemm_t.n_cols_per_buff = num_cols;
-  gemm_t.fp_in  = fopen( cf->XL_path, "rb" );
-  gemm_t.fp_out = fopen( cf->ZtXL_path, "wb" );
-  /*fd_in  = open( cf->X_path, O_RDONLY | O_SYNC );*/
-  /*fd_out = open( cf->ZtX_path, O_WRONLY | O_CREAT | O_SYNC );*/
-  /*gemm_t.fp_in  = fdopen( fd_in,  "rb" );*/
-  /*gemm_t.fp_out = fdopen( fd_out, "wb" );*/
-  sem_init( &gemm_t.sem_io,   0, 0 );
-  sem_init( &gemm_t.sem_comp, 0, 0 );
-
-  iret = pthread_create(&io_thread, NULL, ooc_gemm_io, (void*)&gemm_t);
-  if (iret)
-  {
-    fprintf(stderr, __FILE__ ": Error creating IO thread (1): %d\n", iret);
-    exit(EXIT_FAILURE);
-  }
-  iret = pthread_create(&compute_thread, NULL, ooc_gemm_comp, (void*)&gemm_t);
-  if (iret)
-  {
-    fprintf(stderr, __FILE__ ": Error creating Computation thread (1): %d\n", iret);
-    exit(EXIT_FAILURE);
-  }
-
-  pthread_join(io_thread, &vret);
-  pthread_join(compute_thread, &vret);
-
-  /*printf("Closing files\n"); */
-  /*printf("Closing input\n"); */
-  fclose( gemm_t.fp_in );
-  /*printf("Closing output\n"); */
-  fclose( gemm_t.fp_out );
-  /*printf("Closed\n"); */
-
-  printf(" Done\n");
-
-  printf("Computing Z' XR...");
-  fflush(stdout);
-
-  /*chunk_size = MIN ( 1L<<19 - (1L << 19 % cf->n), cf->m * cf->wXR * cf->n );*/
-  /*num_cols = chunk_size / cf->n;*/
-
-  gemm_t.Z = Z;
-  /*gemm_t.in[0]  = ( double* ) malloc ( chunk_size * sizeof(double) );*/
-  /*gemm_t.in[1]  = ( double* ) malloc ( chunk_size * sizeof(double) );*/
-  /*gemm_t.out[0] = ( double* ) malloc ( chunk_size * sizeof(double) );*/
-  /*gemm_t.out[1] = ( double* ) malloc ( chunk_size * sizeof(double) );*/
-
-  gemm_t.m = cf->n;
-  gemm_t.n = cf->m * cf->wXR;
-  gemm_t.k = cf->n;
-  gemm_t.n_cols_per_buff = num_cols;
-  gemm_t.fp_in  = fopen( cf->XR_path, "rb" );
-  gemm_t.fp_out = fopen( cf->ZtXR_path, "wb" );
-
-  sem_init( &gemm_t.sem_io,   0, 0 );
-  sem_init( &gemm_t.sem_comp, 0, 0 );
-
-  iret = pthread_create(&io_thread, NULL, ooc_gemm_io, (void*)&gemm_t);
-  if (iret)
-  {
-    fprintf(stderr, __FILE__ ": Error creating IO thread (2): %d\n", iret);
-    exit(EXIT_FAILURE);
-  }
-  iret = pthread_create(&compute_thread, NULL, ooc_gemm_comp, (void*)&gemm_t);
-  if (iret)
-  {
-    fprintf(stderr, __FILE__ ": Error creating Computation thread (2): %d\n", iret);
-    exit(EXIT_FAILURE);
-  }
-
-  pthread_join(io_thread, &vret);
-  pthread_join(compute_thread, &vret);
-
-  /*printf("Closing files\n"); */
-  /*printf("Closing input\n"); */
-  fclose( gemm_t.fp_in );
-  /*printf("Closing output\n"); */
-  fclose( gemm_t.fp_out );
-  /*printf("Closed\n"); */
-
-  printf(" Done\n");
-
-  /*chunk_size = MIN ( 1L<<19 - (1L << 19 % cf->n), cf->t * cf->n );*/
-  /*num_cols = chunk_size / cf->n;*/
-
-  gemm_t.m = cf->n;
-  gemm_t.n = cf->t;
-  gemm_t.k = cf->n;
-  gemm_t.n_cols_per_buff = num_cols;
-  gemm_t.fp_in  = fopen( cf->Y_path, "rb" );
-  gemm_t.fp_out = fopen( cf->ZtY_path, "wb" );
-
-  sem_init( &gemm_t.sem_io,   0, 0 );
-  sem_init( &gemm_t.sem_comp, 0, 0 );
-
-  printf("Computing Z' Y...");
-  fflush(stdout);
-  iret = pthread_create(&io_thread, NULL, ooc_gemm_io, (void*)&gemm_t);
-  if (iret)
-  {
-    fprintf(stderr, __FILE__ ": Error creating IO thread (3): %d\n", iret);
-    exit(EXIT_FAILURE);
-  }
-  iret = pthread_create(&compute_thread, NULL, ooc_gemm_comp, (void*)&gemm_t);
-  if (iret)
-  {
-    fprintf(stderr, __FILE__ ": Error creating Computation thread (3): %d\n", iret);
-    exit(EXIT_FAILURE);
-  }
-
-  pthread_join(io_thread, &vret);
-  pthread_join(compute_thread, &vret);
-
-  fclose( gemm_t.fp_in );
-  fclose( gemm_t.fp_out );
-
-  printf(" Done\n");
-
-  free(gemm_t.in[0]);
-  free(gemm_t.in[1]);
-  free(gemm_t.out[0]);
-  free(gemm_t.out[1]);
-
-  sem_destroy( &gemm_t.sem_io );
-  sem_destroy( &gemm_t.sem_comp );
-
-  return 0;
 }

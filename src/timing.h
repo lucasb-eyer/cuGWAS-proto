@@ -1,7 +1,6 @@
 #ifndef TIMING_H
 #define TIMING_H
 
-
 #include <stdio.h>
 
 #include <sys/time.h>
@@ -20,24 +19,6 @@
 #define END_TIMING(var)
 #define DEF_TIMING()
 #endif // TIMING
-
-/*#if TIMING*/
-/*#define BEGIN_TIMING() \*/
-/*clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start);*/
-/*#define END_TIMING(var)     \*/
-/*clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end); \*/
-/*var += get_diff_ns(&start, &end);*/
-/*#define END_TIMING2(var)     \*/
-/*gettimeofday(&end, NULL);   \*/
-/*printf("Time: %ld\n", get_diff_ms(&start, &end)); \*/
-/*var += get_diff_us(&start, &end);*/
-/*#define DEF_TIMING() \*/
-/*struct timespec start, end;*/
-/*#else // TIMING*/
-/*#define BEGIN_TIMING()*/
-/*#define END_TIMING(var)*/
-/*#define DEF_TIMING()*/
-/*#endif // TIMING*/
 
 typedef struct timing_t {
   long compute_time;

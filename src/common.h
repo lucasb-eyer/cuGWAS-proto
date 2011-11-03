@@ -1,12 +1,13 @@
 #ifndef FGLS_COMMON_H
 #define FGLS_COMMON_H
 
-#define DEBUG 1
+#define DEBUG 0
 #define TIMING 0
 #define VAMPIR 0
 
 #define MIN(x,y) ( (x) < (y) ? (x) : (y) )
 #define STR_BUFFER_SIZE 256
+#define NUM_BUFFERS_PER_THREAD 2
 
 #include "aio.h"
 
@@ -51,7 +52,10 @@ void initialize_config(
 		char *B_path, char *V_path
 );
 
-void swap_buffers(double** b1, double** b2);
+void swap_buffers(double **b1, double **b2);
 void swap_aiocb(struct aiocb ***x, struct aiocb ***y);
+
+int read_clock(struct timeval *t);
+int elapsed_time(struct timeval *start, struct timeval *end);
 
 #endif // FGLS_COMMON_H

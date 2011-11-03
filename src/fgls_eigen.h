@@ -2,11 +2,22 @@
 #define FGLS_EIGEN_H
 
 #include <semaphore.h>
-
 #include "common.h"
-/*#include "timing.h"*/
 
 #define NUM_BUFFERS_PER_THREAD 2
+
+typedef struct 
+{
+	double *Z;
+	FILE *fp_in;
+	FILE *fp_out;
+	int m, n, k;
+	long int n_cols_per_buff;
+	double *in[2];
+	double *out[2];
+	sem_t sem_io;
+	sem_t sem_comp;
+} ooc_gemm_t;
 
 typedef struct {
 	FILE *XR_fp;
@@ -35,21 +46,6 @@ typedef struct {
 	int id;
 } ooc_loops_t;
 
-typedef struct 
-{
-	double *Z;
-	FILE *fp_in;
-	FILE *fp_out;
-	int m, n, k;
-	long int n_cols_per_buff;
-	double *in[2];
-	double *out[2];
-	sem_t sem_io;
-	sem_t sem_comp;
-} ooc_gemm_t;
-
-/*FGLS_eigen_t FGLS_eigen_config;*/
-
 int fgls_eigen(
 		int n, int p, int m, int t, int wXL, int wXR,
         int x_b, int y_b, int num_threads,
@@ -57,7 +53,5 @@ int fgls_eigen(
 		char *XL_path, char *XR_path, char *Y_path,
 		char *B_path, char *V_path
 );
-/*int  fgls_eigen( FGLS_eigen_t *cf );*/
-/*int  preloop(double *Phi, double *Z, double *W);*/
 
 #endif // FGLS_EIGEN_H
