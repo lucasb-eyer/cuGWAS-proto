@@ -1,7 +1,26 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
+
 #include "common.h"
+
+void error_msg(char *file, int line, char *msg, int abort)
+{
+	fprintf(stderr, "[Error] %s(line %d): %s\n", file, line, msg);
+	if (abort)
+		exit(EXIT_FAILURE);
+}
+
+void * fgls_malloc( size_t size )
+{
+	void *buf;
+	
+	if ( (buf = malloc( size )) == NULL )
+		error_msg(__FILE__, __LINE__, "Couldn't allocate memory\n", 1);
+
+	return buf;
+}
 
 int read_clock(struct timeval *t)
 {

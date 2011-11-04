@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "io.h"
 
@@ -30,3 +31,40 @@ void sync_write(double* buffer, FILE* fp, size_t size, size_t start)
 	return; 
 }
 
+void fgls_aio_read(struct aiocb *aiocb, int fildes, void *buf, size_t nbytes, off_t offset)
+{
+	bzero( (char *)aiocb,  sizeof(struct aiocb) );
+
+	aiocb->aio_fildes = fildes;
+	aiocb->aio_buf = buf;
+	aiocb->aio_nbytes = nbytes;
+	aiocb->aio_offset = offset;
+	/*aiocb_y_cur.aio_flag = AIO_RAW;*/
+
+	if ( aio_read( aiocb ) != 0 )
+	{
+		perror("aio_read error");
+		exit(EXIT_FAILURE);
+	}
+
+	return;
+}
+
+void fgls_aio_write(struct aiocb *aiocb, int fildes, void *buf, size_t nbytes, off_t offset)
+{
+	bzero( (char *)aiocb,  sizeof(struct aiocb) );
+
+	aiocb->aio_fildes = fildes;
+	aiocb->aio_buf = buf;
+	aiocb->aio_nbytes = nbytes;
+	aiocb->aio_offset = offset;
+	/*aiocb_y_cur.aio_flag = AIO_RAW;*/
+
+	if ( aio_write( aiocb ) != 0 )
+	{
+		perror("aio_write error");
+		exit(EXIT_FAILURE);
+	}
+
+	return;
+}
