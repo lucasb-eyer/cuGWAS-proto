@@ -12,4 +12,7 @@ void fgls_aio_read(struct aiocb *aiocb, int fildes, void *buf, size_t nbytes, of
 
 void fgls_aio_write(struct aiocb *aiocb, int fildes, void *buf, size_t nbytes, off_t offset);
 
+void fgls_aio_suspend(const struct aiocb * const cblist[], 
+		              int n, const struct timespec *timeout);
+
 #endif

@@ -44,7 +44,7 @@ void fgls_aio_read(struct aiocb *aiocb, int fildes, void *buf, size_t nbytes, of
 	if ( aio_read( aiocb ) != 0 )
 	{
 		perror("aio_read error");
-		exit(EXIT_FAILURE);
+		exit( EXIT_FAILURE );
 	}
 
 	return;
@@ -63,8 +63,18 @@ void fgls_aio_write(struct aiocb *aiocb, int fildes, void *buf, size_t nbytes, o
 	if ( aio_write( aiocb ) != 0 )
 	{
 		perror("aio_write error");
-		exit(EXIT_FAILURE);
+		exit( EXIT_FAILURE );
 	}
 
 	return;
+}
+
+void fgls_aio_suspend(const struct aiocb * const cblist[], 
+		              int n, const struct timespec *timeout)
+{
+	if ( aio_suspend( cblist, n, timeout ) != 0 )
+	{
+		perror("aio_suspend error");
+		exit( EXIT_FAILURE );
+	}
 }
