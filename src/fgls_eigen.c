@@ -81,9 +81,11 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 	fclose( Phi_fp );
 	/* Compute the pre-loop operations */
 	snprintf(numths_str, STR_BUFFER_SIZE, "%d", cf.NUM_COMPUTE_THREADS);
-	setenv("OMP_NUM_THREADS", numths_str, 1);
+	/*setenv("OMP_NUM_THREADS", numths_str, 1);*/
+	setenv("GOTO_NUM_THREADS", numths_str, 1);
 	preloop(&cf, Phi, Z, loops_t.W);
-	setenv("OMP_NUM_THREADS", "1", 1);
+	setenv("GOTO_NUM_THREADS", "1", 1);
+	/*setenv("OMP_NUM_THREADS", "1", 1);*/
 	/* Clean-up */
 	free( Phi );
 	free( Z );
@@ -240,33 +242,34 @@ void* compute_thread_func(void* in)
   double *Bij, *Vij;
   int info;
 
-  struct aiocb aiocb_x_cur,  aiocb_x_next,
-			   aiocb_y_cur,  aiocb_y_next,
+  double *x_copy = (double *) fgls_malloc (x_b * wXR * n * sizeof(double));
+
+  struct aiocb  aiocb_x_cur,   aiocb_x_next,
+			    aiocb_y_cur,   aiocb_y_next,
 			   *aiocb_b_prev, *aiocb_b_cur,
 			   *aiocb_v_prev, *aiocb_v_cur;
-  double *x_copy = (double *) malloc (x_b * wXR * n * sizeof(double));
-
   aiocb_b_prev = (struct aiocb *) fgls_malloc (y_b * sizeof(struct aiocb));
   aiocb_b_cur  = (struct aiocb *) fgls_malloc (y_b * sizeof(struct aiocb));
   aiocb_v_prev = (struct aiocb *) fgls_malloc (y_b * sizeof(struct aiocb));
   aiocb_v_cur  = (struct aiocb *) fgls_malloc (y_b * sizeof(struct aiocb));
-  struct aiocb **aiocb_x_cur_l,//  = { &aiocb_x_cur }, 
-			   **aiocb_x_next_l,// = { &aiocb_x_next },
-			   **aiocb_y_cur_l,//  = { &aiocb_y_cur },
-			   **aiocb_y_next_l,// = { &aiocb_y_next },
-			   **aiocb_b_prev_l,// = {  aiocb_b_prev },
-			   **aiocb_b_cur_l,//  = {  aiocb_b_cur };
-			   **aiocb_v_prev_l,// = {  aiocb_v_prev },
-			   **aiocb_v_cur_l;//  = {  aiocb_v_cur };
 
-  aiocb_x_cur_l  = (struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
-  aiocb_x_next_l = (struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
-  aiocb_y_cur_l  = (struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
-  aiocb_y_next_l = (struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
-  aiocb_b_prev_l = (struct aiocb **) fgls_malloc (y_b * sizeof(struct aiocb *));
-  aiocb_b_cur_l  = (struct aiocb **) fgls_malloc (y_b * sizeof(struct aiocb *));
-  aiocb_v_prev_l = (struct aiocb **) fgls_malloc (y_b * sizeof(struct aiocb *));
-  aiocb_v_cur_l  = (struct aiocb **) fgls_malloc (y_b * sizeof(struct aiocb *));
+  struct aiocb const ** aiocb_x_cur_l,  //[1]  = { &aiocb_x_cur }, 
+			         ** aiocb_x_next_l, //[1] = { &aiocb_x_next },
+			         ** aiocb_y_cur_l,  //[1]  = { &aiocb_y_cur },
+			         ** aiocb_y_next_l, //[1] = { &aiocb_y_next },
+			         ** aiocb_b_prev_l, //[1] = {  aiocb_b_prev },
+			         ** aiocb_b_cur_l,  //[1]  = {  aiocb_b_cur },
+			         ** aiocb_v_prev_l, //[1] = {  aiocb_v_prev },
+			         ** aiocb_v_cur_l;  //[1]  = {  aiocb_v_cur };
+
+  aiocb_x_cur_l  = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+  aiocb_x_next_l = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+  aiocb_y_cur_l  = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+  aiocb_y_next_l = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+  aiocb_b_prev_l = (const struct aiocb **) fgls_malloc (y_b * sizeof(struct aiocb *));
+  aiocb_b_cur_l  = (const struct aiocb **) fgls_malloc (y_b * sizeof(struct aiocb *));
+  aiocb_v_prev_l = (const struct aiocb **) fgls_malloc (y_b * sizeof(struct aiocb *));
+  aiocb_v_cur_l  = (const struct aiocb **) fgls_malloc (y_b * sizeof(struct aiocb *));
 
   aiocb_x_cur_l[0]  = &aiocb_x_cur;
   aiocb_x_next_l[0] = &aiocb_x_next;
@@ -498,13 +501,13 @@ void* compute_thread_func(void* in)
 	  struct aiocb *aiocb_v_cur_p;
 	  for ( k = 0; k < y_inc; k++ )
 	  {
-		  aiocb_b_cur_p = aiocb_b_cur_l[k];
+		  aiocb_b_cur_p = (struct aiocb *) aiocb_b_cur_l[k];
 		  fgls_aio_write( aiocb_b_cur_p,
 				          fileno( loops_t->B_fp ), &b_cur[ k * x_inc * p],
 						  x_inc * p * sizeof(double),
 						  ((jb+k) * m * p + ib * p) * sizeof(double) );
 
-		  aiocb_v_cur_p = aiocb_v_cur_l[k];
+		  aiocb_v_cur_p = (struct aiocb *) aiocb_v_cur_l[k];
 		  fgls_aio_write( aiocb_v_cur_p,
 				          fileno( loops_t->V_fp ), &v_cur[ k * x_inc * p * p],
 						  x_inc * p * p * sizeof(double),
@@ -559,6 +562,20 @@ void* compute_thread_func(void* in)
 #if VAMPIR
       VT_USER_END("WAIT_B");
 #endif
+
+  free( x_copy );
+  free( aiocb_b_prev );
+  free( aiocb_b_cur  );
+  free( aiocb_v_prev );
+  free( aiocb_v_cur  );
+  free( aiocb_x_cur_l  );
+  free( aiocb_x_next_l );
+  free( aiocb_y_cur_l  );
+  free( aiocb_y_next_l );
+  free( aiocb_b_prev_l );
+  free( aiocb_b_cur_l  );
+  free( aiocb_v_prev_l );
+  free( aiocb_v_cur_l  );
 
   pthread_exit(NULL);
 }
@@ -751,15 +768,15 @@ void* ooc_gemm_comp( void *in )
 	struct aiocb aiocb_in_cur,   aiocb_in_next,
 	             aiocb_out_prev, aiocb_out_cur;
 
-	struct aiocb **aiocb_in_cur_l,
-	             **aiocb_in_next_l,
-	             **aiocb_out_prev_l,
-	             **aiocb_out_cur_l;
+	const struct aiocb ** aiocb_in_cur_l,
+	                   ** aiocb_in_next_l,
+	                   ** aiocb_out_prev_l,
+	                   ** aiocb_out_cur_l;
 
-	aiocb_in_cur_l   = (struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
-	aiocb_in_next_l  = (struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
-	aiocb_out_prev_l = (struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
-	aiocb_out_cur_l  = (struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+	aiocb_in_cur_l   = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+	aiocb_in_next_l  = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+	aiocb_out_prev_l = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+	aiocb_out_cur_l  = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
 
 	aiocb_in_cur_l[0]   = &aiocb_in_cur;
 	aiocb_in_next_l[0]  = &aiocb_in_next;

@@ -64,9 +64,9 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 	double ZERO = 0.0;
 	int iONE = 1;
 
-	int ib, i, j, k, l;
+	int ib, i, j, k;
 	int nn = n * n;
-	int x_inc, y_inc;
+	/*int x_inc, y_inc;*/
 	double *Bij, *Vij;
 	int info;
 
@@ -141,23 +141,23 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 				 aiocb_b_prev, aiocb_b_cur,
 				 aiocb_v_prev, aiocb_v_cur;
 
-	struct aiocb **aiocb_x_cur_l,//	= { &aiocb_x_cur }, 
-				 **aiocb_x_next_l,// = { &aiocb_x_next },
-				 **aiocb_y_cur_l,//	= { &aiocb_y_cur },
-				 **aiocb_y_next_l,// = { &aiocb_y_next },
-				 **aiocb_b_prev_l,// = {	aiocb_b_prev },
-				 **aiocb_b_cur_l,//	= {	aiocb_b_cur };
-				 **aiocb_v_prev_l,// = {	aiocb_v_prev },
-				 **aiocb_v_cur_l;//	= {	aiocb_v_cur };
+	const struct aiocb ** aiocb_x_cur_l,//	= { &aiocb_x_cur }, 
+		               ** aiocb_x_next_l,// = { &aiocb_x_next },
+				       ** aiocb_y_cur_l,//	= { &aiocb_y_cur },
+				       ** aiocb_y_next_l,// = { &aiocb_y_next },
+				       ** aiocb_b_prev_l,// = {	aiocb_b_prev },
+				       ** aiocb_b_cur_l,//	= {	aiocb_b_cur };
+				       ** aiocb_v_prev_l,// = {	aiocb_v_prev },
+				       ** aiocb_v_cur_l;//	= {	aiocb_v_cur };
 
-	aiocb_x_cur_l  = (struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
-	aiocb_x_next_l = (struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
-	aiocb_y_cur_l  = (struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
-	aiocb_y_next_l = (struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
-	aiocb_b_prev_l = (struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
-	aiocb_b_cur_l  = (struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
-	aiocb_v_prev_l = (struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
-	aiocb_v_cur_l  = (struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+	aiocb_x_cur_l  = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+	aiocb_x_next_l = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+	aiocb_y_cur_l  = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+	aiocb_y_next_l = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+	aiocb_b_prev_l = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+	aiocb_b_cur_l  = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+	aiocb_v_prev_l = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+	aiocb_v_cur_l  = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
 
 	aiocb_x_cur_l[0]  = &aiocb_x_cur;
 	aiocb_x_next_l[0] = &aiocb_x_next;
@@ -288,14 +288,14 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 			}
 			/* Write current B and V */
 			struct aiocb *aiocb_b_cur_p;
-			aiocb_b_cur_p = aiocb_b_cur_l[0];
+			aiocb_b_cur_p = (struct aiocb *) aiocb_b_cur_l[0];
 			fgls_aio_write( aiocb_b_cur_p,
 							fileno( B_fp ), b_cur,
 							x_inc * p * sizeof(double),
 							(j * m * p + ib * p) * sizeof(double) );
 
 			struct aiocb *aiocb_v_cur_p;
-			aiocb_v_cur_p = aiocb_v_cur_l[0];
+			aiocb_v_cur_p = (struct aiocb *) aiocb_v_cur_l[0];
 			fgls_aio_write( aiocb_v_cur_p,
 							fileno( V_fp ), v_cur,
 							x_inc * p * p * sizeof(double),
@@ -348,6 +348,15 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 	free( M );
 	free( h );
 	free( sigma );
+
+  free( aiocb_x_cur_l  );
+  free( aiocb_x_next_l );
+  free( aiocb_y_cur_l  );
+  free( aiocb_y_next_l );
+  free( aiocb_b_prev_l );
+  free( aiocb_b_cur_l  );
+  free( aiocb_v_prev_l );
+  free( aiocb_v_cur_l  );
 
 	return 0;
 }

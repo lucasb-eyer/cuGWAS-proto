@@ -1,7 +1,7 @@
 #ifndef FGLS_COMMON_H
 #define FGLS_COMMON_H
 
-#define DEBUG 1
+#define DEBUG 0
 #define TIMING 0
 #define VAMPIR 0
 
@@ -53,11 +53,12 @@ void initialize_config(
 );
 
 void swap_buffers(double **b1, double **b2);
-void swap_aiocb(struct aiocb ***x, struct aiocb ***y);
+void swap_aiocb(const struct aiocb ***x, const struct aiocb ***y);
 
 int read_clock(struct timeval *t);
 int elapsed_time(struct timeval *start, struct timeval *end);
 
 void * fgls_malloc( size_t size );
+void error_msg(char *msg, int abort);
 
 #endif // FGLS_COMMON_H
