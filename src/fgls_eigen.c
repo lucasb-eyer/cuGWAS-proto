@@ -24,10 +24,10 @@
   #include "vt_user.h"
 #endif
 
-void * compute_thread_func(void* in);
 int    preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W);
 void   eigenDec(int n, double *Phi, double *Z, double *W);
-void * ooc_gemm_comp( void *in );
+void * ooc_gemm( void *in );
+void * ooc_loops(void* in);
 
 /*
  * Eigen-based computation of the Feasible Generalized Least-Squares problem
@@ -38,18 +38,27 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
                char *XL_path, char *XR_path, char *Y_path,
                char *B_path, char *V_path)
 {
+	/* Problem configuration */
 	FGLS_config_t cf;
 
-	int rc, i;
-	char numths_str[STR_BUFFER_SIZE];
-	pthread_t *compute_threads;
-
+	/* Preloop computation */
 	double *Phi,
 	       *Z;
 	FILE *Phi_fp, *h_fp, *sigma_fp,
 	     *XL_fp;
+
+	/* Loops computation */
+	// Thread handling 
+	int rc;
+	void *retval;
+	pthread_t *compute_threads;
+	// Data structures
 	ooc_loops_t loops_t;
 	ooc_loops_t *loops_t_comp;
+
+	// iterators and auxiliar vars
+	int i;
+	char numths_str[STR_BUFFER_SIZE];
 
 	/* Check input values */
 	/*printf("n: %d\np: %d\nm: %d\nt: %d\nwXL: %d\nwXR: %d\n", n, p, m, t, wXL, wXR);*/
@@ -58,6 +67,7 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 	/*printf("XL: %s\nXR: %s\nY: %s\n", cf.XL_path, cf.XR_path, cf.Y_path);*/
 	/*printf("B: %s\nV: %s\n", cf.B_path, cf.V_path);*/
 
+	/* Fill in the config structure */
 	initialize_config(
 		&cf,
 		n, p, m, t, wXL, wXR,
@@ -75,17 +85,26 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 	Phi = ( double * ) fgls_malloc ( cf.n * cf.n * sizeof(double) );
 	Z   = ( double * ) fgls_malloc ( cf.n * cf.n * sizeof(double) );
 	loops_t.W = ( double * ) fgls_malloc ( cf.n * sizeof(double) );
+	
 	/* Load Phi */
 	Phi_fp = fopen( cf.Phi_path, "rb" );
 	sync_read( Phi, Phi_fp, cf.n * cf.n, 0 );
 	fclose( Phi_fp );
+	
 	/* Compute the pre-loop operations */
 	snprintf(numths_str, STR_BUFFER_SIZE, "%d", cf.NUM_COMPUTE_THREADS);
-	/*setenv("OMP_NUM_THREADS", numths_str, 1);*/
+#ifdef GOTO
 	setenv("GOTO_NUM_THREADS", numths_str, 1);
+#else
+	setenv("OMP_NUM_THREADS", numths_str, 1);
+#endif
 	preloop(&cf, Phi, Z, loops_t.W);
+#ifdef GOTO
 	setenv("GOTO_NUM_THREADS", "1", 1);
-	/*setenv("OMP_NUM_THREADS", "1", 1);*/
+#else
+	setenv("OMP_NUM_THREADS", "1", 1);
+#endif
+
 	/* Clean-up */
 	free( Phi );
 	free( Z );
@@ -98,6 +117,20 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 #endif
 	loops_t.cf = &cf;
 	/* Allocating memory for the computation of the double loop */
+	// In-core data
+	loops_t.h     = ( double * ) fgls_malloc ( cf.t * sizeof(double) );
+	loops_t.sigma = ( double * ) fgls_malloc ( cf.t * sizeof(double) );
+	loops_t.alpha = ( double * ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.y_b * sizeof(double) );
+	loops_t.beta  = ( double * ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.y_b * sizeof(double) );
+	loops_t.Winv  = ( double * ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.x_b * cf.n * sizeof(double) );
+	// The original in XL[0]
+	// The copy to overwrite in XL[1]
+	loops_t.XL[0] = ( double * ) fgls_malloc ( cf.wXL * cf.n * sizeof(double) );
+	loops_t.XL[1] = ( double * ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.wXL * cf.n * cf.y_b * sizeof(double) );
+	// Reusable B_Top and V_TopLeft
+	loops_t.B_t  = ( double * ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.wXL * cf.y_b * sizeof(double) );
+	loops_t.V_tl = ( double * ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.wXL * cf.wXL * cf.y_b * sizeof(double) );
+
 	// Double-buffering for the operands that do not fit in RAM
 	for (i = 0; i < NUM_BUFFERS_PER_THREAD; i++) 
 	{
@@ -106,37 +139,26 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 		loops_t.B[i] = ( double* ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.x_b * cf.y_b * cf.p * sizeof(double) );
 		loops_t.V[i] = ( double* ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.x_b * cf.y_b * cf.p * cf.p * sizeof(double) );
 	}
-	// The original in XL[0]
-	// The copy to overwrite in XL[1]
-	loops_t.XL[0] = ( double* ) fgls_malloc ( cf.wXL * cf.n * sizeof(double) );
-	loops_t.XL[1] = ( double* ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.wXL * cf.n * cf.y_b * sizeof(double) );
-	// Reusable b_Top and V_TopLeft
-	loops_t.XL_b  = ( double* ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.wXL * cf.y_b * sizeof(double) );
-	loops_t.XLtXL = ( double* ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.wXL * cf.wXL * cf.y_b * sizeof(double) );
 
-	loops_t.h     = ( double* ) fgls_malloc ( cf.t * sizeof(double) );
-	loops_t.sigma = ( double* ) fgls_malloc ( cf.t * sizeof(double) );
+	/* Load in-core data */
+	// h
+	h_fp = fopen( cf.h_path, "r");
+	sync_read(loops_t.h, h_fp, cf.t, 0);
+	fclose( h_fp );
+	// sigma
+	sigma_fp = fopen( cf.sigma_path, "r");
+	sync_read(loops_t.sigma, sigma_fp, cf.t, 0);
+	fclose( sigma_fp );
+	// XL
+	XL_fp = fopen( cf.ZtXL_path, "rb" );
+	sync_read( loops_t.XL[0], XL_fp, cf.wXL * cf.n, 0 );
+	fclose( XL_fp );
 
-	loops_t.alpha = ( double* ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.y_b * sizeof(double) );
-	loops_t.beta  = ( double* ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.y_b * sizeof(double) );
-	loops_t.Winv  = ( double* ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.x_b * cf.n * sizeof(double) );
-
-	// Files for XR, Y, B and V
+	/* Files for out-of-core data: XR, Y, B and V */
 	loops_t.XR_fp = fopen( cf.ZtXR_path, "rb");
 	loops_t.Y_fp  = fopen( cf.ZtY_path, "rb");
 	loops_t.B_fp  = fopen( cf.B_path, "wb");
 	loops_t.V_fp  = fopen( cf.V_path, "wb");
-
-	// Load XL, h and sigma
-	XL_fp = fopen( cf.ZtXL_path, "rb" );
-	sync_read( loops_t.XL[0], XL_fp, cf.wXL * cf.n, 0 );
-	fclose( XL_fp );
-	h_fp = fopen( cf.h_path, "r");
-	sync_read(loops_t.h, h_fp, cf.t, 0);
-	fclose( h_fp );
-	sigma_fp = fopen( cf.sigma_path, "r");
-	sync_read(loops_t.sigma, sigma_fp, cf.t, 0);
-	fclose( sigma_fp );
 
 	printf("LOOPS\n");
 
@@ -148,7 +170,7 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 		memcpy((void*)&loops_t_comp[i], (void*)&loops_t, sizeof(ooc_loops_t));
 		loops_t_comp[i].id = i;
 
-		rc = pthread_create( &compute_threads[i], NULL, compute_thread_func, (void*)&loops_t_comp[i] );
+		rc = pthread_create( &compute_threads[i], NULL, ooc_loops, (void*)&loops_t_comp[i] );
 		if (rc) 
 		{
 			char err[STR_BUFFER_SIZE];
@@ -158,7 +180,6 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 	}
 
 	/* Wait for the spawned threads */
-	void* retval;
 	for (i = 0; i < cf.NUM_COMPUTE_THREADS; i++)
 		pthread_join(compute_threads[i], &retval);
 #if VAMPIR
@@ -182,8 +203,8 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 	}
 	free( loops_t.XL[0] );
 	free( loops_t.XL[1] );
-	free( loops_t.XL_b  );
-	free( loops_t.XLtXL );
+	free( loops_t.B_t  );
+	free( loops_t.V_tl );
 
 	free( loops_t.h );
 	free( loops_t.sigma );
@@ -199,11 +220,12 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 	return 0;
 }
 
-void* compute_thread_func(void* in) 
+void* ooc_loops(void* in) 
 {
   ooc_loops_t *loops_t = ( ooc_loops_t* ) in;
   FGLS_config_t *cf = loops_t->cf;
 
+  /* Dimensions of the problem */
   int m = cf->m,
 	  n = cf->n,
 	  p = cf->p,
@@ -214,9 +236,20 @@ void* compute_thread_func(void* in)
 	  y_b = cf->y_b,
 	  id = loops_t->id;
 
-  double *xl     = &loops_t->XL[1][id * wXL * n * y_b];
-  double *xl_b   = &loops_t->XL_b[id * wXL * y_b];
-  double *xltxl  = &loops_t->XLtXL[id * wXL * wXL * y_b];
+  /* In-core data */
+  double *W      =  loops_t->W;
+  double *h      =  loops_t->h;
+  double *sigma  =  loops_t->sigma;
+  double *alpha  = loops_t->alpha, 
+		 *beta   = loops_t->beta;
+  double *Winv = &loops_t->Winv[id * y_b * n];
+
+  /* Reusable data (common XL) */
+  double *XL     = &loops_t->XL[1][id * wXL * n * y_b];
+  double *B_t    = &loops_t->B_t[id * wXL * y_b];
+  double *V_tl   = &loops_t->V_tl[id * wXL * wXL * y_b];
+
+  /* Double buffering pointers */
   double *x_cur  = &loops_t->X[0][id * n * wXR * x_b];
   double *x_next = &loops_t->X[1][id * n * wXR * x_b];
   double *y_cur  = &loops_t->Y[0][id * y_b * n];
@@ -225,25 +258,23 @@ void* compute_thread_func(void* in)
   double *b_prev = &loops_t->B[1][id * p * x_b * y_b];
   double *v_cur  = &loops_t->V[0][id * p * p * x_b * y_b];
   double *v_prev = &loops_t->V[1][id * p * p * x_b * y_b];
-  double *h      =  loops_t->h;
-  double *sigma  =  loops_t->sigma;
-  double *W      =  loops_t->W;
 
-  double *Winv = &loops_t->Winv[id * y_b * n];
-
+  /* BLAS / LAPACK constants */
   double ONE = 1.0;
   double ZERO = 0.0;
   int iONE = 1;
-  double *alpha = loops_t->alpha, 
-		 *beta  = loops_t->beta;
+  /* LAPACK error value */
+  int info;
 
+  /* iterators and auxiliar vars */
   int ib, jb, i, j, k, l, ll;
   int x_inc, y_inc;
   double *Bij, *Vij;
-  int info;
 
+  /* XR used many times and overwritten, need to work on a copy */
   double *x_copy = (double *) fgls_malloc (x_b * wXR * n * sizeof(double));
 
+  /* Asynchronous IO data structures */
   struct aiocb  aiocb_x_cur,   aiocb_x_next,
 			    aiocb_y_cur,   aiocb_y_next,
 			   *aiocb_b_prev, *aiocb_b_cur,
@@ -283,7 +314,7 @@ void* compute_thread_func(void* in)
 	  aiocb_v_cur_l[i]  = &aiocb_v_cur[i];
   }
 
-  /* Read initial X and Y */
+  /* Read initial XR's and Y */
   fgls_aio_read( &aiocb_x_cur, 
 		         fileno( loops_t->XR_fp ), x_cur,
 				 MIN( x_b, m ) * wXR * n * sizeof(double), 0 );
@@ -303,9 +334,6 @@ void* compute_thread_func(void* in)
 #if VAMPIR
       VT_USER_START("READ_Y");
 #endif
-    //read( y_cur, loops_t->Y_fp, 
-	//		j + cf->NUM_COMPUTE_THREADS > t ? 0 : MIN( cf->NUM_COMPUTE_THREADS * n, (t - (j + cf->NUM_COMPUTE_THREADS)) * n ), 
-	//		j + cf->NUM_COMPUTE_THREADS > t ? 0 : (j + cf->NUM_COMPUTE_THREADS) * n );
 	/* Read next Y */
 	struct aiocb *aiocb_y_next_p = (struct aiocb *)aiocb_y_next_l[0];
 	fgls_aio_read( aiocb_y_next_p,
@@ -322,7 +350,7 @@ void* compute_thread_func(void* in)
 #endif
 	/* Copy XL */
 	for (ll = 0; ll < y_inc; ll++)
-		memcpy( &xl[ll * wXL * n], loops_t->XL[0], wXL * n * sizeof(double) );
+		memcpy( &XL[ll * wXL * n], loops_t->XL[0], wXL * n * sizeof(double) );
 #if VAMPIR
       VT_USER_END("WAIT_X");
 #endif
@@ -345,7 +373,7 @@ void* compute_thread_func(void* in)
     	beta[k]  = sigma[jb + k] * (1 - h[jb + k]); // * h[j]);
 	}
 
-    /* 2) W = sqrt(alpha W - beta I)^-1 */
+    /* Winv := sqrt( inv( alpha W - beta I ) ) */
     // Best order? sqrt - inv
 	//
 	// Possibly GER
@@ -353,29 +381,28 @@ void* compute_thread_func(void* in)
         for (l = 0; l < n; l++)
             Winv[k*n + l] = sqrt(1.0 / (alpha[k] * W[l] + beta[k]));
 
-    /* sqrt(Winv) * ZtY */
+    /* y := sqrt(Winv) * Z' * y */
     for (k = 0; k < y_inc; k++)
         for (l = 0; l < n; l++)
             y_cur[k*n+l] *= Winv[k*n+l];
 
-    /* sqrt(Winv) * Z' * XL */
+    /* XL := sqrt(Winv) * Z' * XL */
 	for (ll = 0; ll < y_inc; ll++)
 	  for ( k = 0; k < wXL; k++ )
 		  for ( l = 0; l < n; l++ )
-			  xl[ ll * wXL * n + k * n + l ] *= Winv[l];
+			  XL[ ll * wXL * n + k * n + l ] *= Winv[l];
       
-    /* 7) b = sqrt(Winv) * ZtXL * y */
+    /* B_t := XL' * XL */
 	for (ll = 0; ll < y_inc; ll++)
-      dgemv_("T", &n, &wXL, &ONE, &xl[ll * wXL * n], &n, &y_cur[ll * n], &iONE, &ZERO, &xl_b[ll * wXL], &iONE);
+      dgemv_("T", &n, &wXL, &ONE, &XL[ll * wXL * n], &n, &y_cur[ll * n], &iONE, &ZERO, &B_t[ll * wXL], &iONE);
 
-	/* Compute Top-left part of V */
+	/* V_tl :=Compute Top-left part of V */
 	for (ll = 0; ll < y_inc; ll++)
 	{
-		/*dsyrk_("L", "T", &p, &n, &ONE, &x_cur[i*p*n], &n, &ZERO, xtSx, &p);*/
 		dsyrk_("L", "T", // LOWER, NO_TRANS, 
 				&wXL, &n, // n, k
-				&ONE, &xl[ll * wXL * n], &n, // KL KL' 
-				&ZERO, &xltxl[ll * wXL * wXL], &wXL); // TL of xtSx
+				&ONE, &XL[ll * wXL * n], &n, // KL KL' 
+				&ZERO, &V_tl[ll * wXL * wXL], &wXL); // V_TL
 	}
 
 #if VAMPIR
@@ -414,39 +441,44 @@ void* compute_thread_func(void* in)
 	  for ( j = 0; j < y_inc; j++ )
 	  {
 		  /*printf("Iter j: %d\n", j);*/
-		  /* sqrt(Winv) * Z' * XR */
+		  /* XR := sqrt(Winv) * Z' * XR */
 		  for ( k = 0; k < x_inc*wXR; k++ )
 			  for ( l = 0; l < n; l++ )
 				  x_copy[ k * n + l ] = x_cur[ k * n + l ] * Winv[l];
 		  
-		  /* 7) b = WinvZtX * y */
+		  /* B_b := WinvZtX * y */
 		  /*dgemv_("T", &n, &mpb_real, &ONE, x_cur, &n, y_cur, &iONE, &ZERO, b_cur, &iONE);*/
 		  
 		  for (i = 0; i < x_inc; i++)
 		  {
 			  Bij = &b_cur[ j*p*x_inc   + i*p];
 			  Vij = &v_cur[ j*p*p*x_inc + i*p*p];
-			  memcpy(Bij, &xl_b[j * wXL], wXL * sizeof(double));
-			  /*printf("DGEMV( T, %d, %d, %2f, %p, %d, %p, %d, %2f, %p, %d);\n",*/
-			  /*n, wXR, ONE, &x_cur[i * wXR * n], n, y_cur, iONE, ZERO, b_cur[i*p + wXL], iONE);*/
+
+			  /* Building B */
+			  // Copy B_T
+			  memcpy(Bij, &B_t[j * wXL], wXL * sizeof(double));
+			  // B_B := XR' * y
 			  dgemv_("T", 
 					  &n, &wXR, 
 					  &ONE, &x_copy[i * wXR * n], &n, &y_cur[j* n], &iONE, 
 					  &ZERO, &Bij[wXL], &iONE);
 
-				/* 5) W = XtZWinv * K^T */
+				/* Building V */
+			    // Copy V_TL
 				for( k = 0; k < wXL; k++ )
-					dcopy_(&wXL, &xltxl[j*wXL*wXL + k*wXL], &iONE, &Vij[k*p], &iONE); // TL
+					dcopy_(&wXL, &V_tl[j*wXL*wXL + k*wXL], &iONE, &Vij[k*p], &iONE); // TL
+				// V_BL := XR' * XL
 				dgemm_("T", "N",
 						&wXR, &wXL, &n, // m, n, k
-						&ONE, &x_copy[i * wXR * n], &n, &xl[j*wXL*n], &n, // KR KL'
-						&ZERO, &Vij[wXL], &p); // xtSx BL
+						&ONE, &x_copy[i * wXR * n], &n, &XL[j*wXL*n], &n, // KR KL'
+						&ZERO, &Vij[wXL], &p); // BL
+				// V_BR := XR' * XR
 				dsyrk_("L", "T", 
 						&wXR, &n, 
 						&ONE, &x_copy[i * wXR * n], &n, 
 						&ZERO, &Vij[wXL * p + wXL], &p);
 
-				/* 8) V^-1 * y */
+				/* B := inv(V) * y */
 				dpotrf_(LOWER, &p, Vij, &p, &info);
 				if (info != 0)
 				{
@@ -465,8 +497,8 @@ void* compute_thread_func(void* in)
 					snprintf(err, STR_BUFFER_SIZE, "dpotri failed (info: %d)", info);
 					error_msg(err, 1);
 				}
-				//int p2 = p*p;
-				//dscal_(&p2, &scorevar, xTSx, &iONE);
+				// int p2 = p*p;
+				// dscal_(&p2, &scorevar, Vij, &iONE);
 				for ( k = 0; k < p; k++ )
 					Vij[k*p+k] = sqrt(Vij[k*p+k]);
 		  }
@@ -481,8 +513,8 @@ void* compute_thread_func(void* in)
 	  /* Wait until previously computed B and V are written */
 	  if ( iter > 0)
 	  {
-		  /*if ( aio_suspend( aiocb_b_prev_l, prev_y_inc, NULL ) != 0 ) // FIX*/
-		  /*if ( aio_suspend( aiocb_b_prev_l, y_b, NULL ) != 0 ) // FIX*/
+		  /*if ( aio_suspend( aiocb_b_prev_l, prev_y_inc, NULL ) != 0 ) // FIX? */
+		  /*if ( aio_suspend( aiocb_b_prev_l, y_b, NULL ) != 0 ) // FIX? */
 		  for ( k = 0; k < y_b; k++ )
 		  {
 			fgls_aio_suspend( &aiocb_b_prev_l[k], 1, NULL );
@@ -532,11 +564,11 @@ void* compute_thread_func(void* in)
 		printf("Iter (%d - %d) time: %ld ms\n", jb, jb+y_inc, get_diff_ms(&t0, &t1));
 		fflush(stdout);
 	}
-	  /* Swap buffers */
+	/* Swap buffers */
 	swap_aiocb( &aiocb_y_cur_l, &aiocb_y_next_l );
 	swap_buffers( &y_cur, &y_next);
   }
-	/* Clean-up: wait for the remaining IO calls issued */
+	/* Wait for the remaining IO operations issued */
 #if VAMPIR
       VT_USER_START("WAIT_X");
 #endif
@@ -563,6 +595,7 @@ void* compute_thread_func(void* in)
       VT_USER_END("WAIT_B");
 #endif
 
+	/* Clean-up */
   free( x_copy );
   free( aiocb_b_prev );
   free( aiocb_b_cur  );
@@ -623,6 +656,7 @@ int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W)
 
 	gemm_t.Z = Z;
 
+	/* Set up dimensions */
 	gemm_t.m = cf->n;
 	gemm_t.n = cf->wXL;
 	gemm_t.k = cf->n;
@@ -634,7 +668,7 @@ int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W)
 	/*gemm_t.fp_in	= fdopen( fd_in,	"rb" );*/
 	/*gemm_t.fp_out = fdopen( fd_out, "wb" );*/
 
-	iret = pthread_create(&compute_thread, NULL, ooc_gemm_comp, (void*)&gemm_t);
+	iret = pthread_create(&compute_thread, NULL, ooc_gemm, (void*)&gemm_t);
 	if (iret)
 	{
 		fprintf(stderr, __FILE__ ": Error creating Computation thread (1): %d\n", iret);
@@ -652,6 +686,7 @@ int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W)
 	printf("Computing Z' XR...");
 	fflush(stdout);
 
+	/* Set up dimensions */
 	gemm_t.m = cf->n;
 	gemm_t.n = cf->m * cf->wXR;
 	gemm_t.k = cf->n;
@@ -659,7 +694,7 @@ int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W)
 	gemm_t.fp_in  = fopen( cf->XR_path, "rb" );
 	gemm_t.fp_out = fopen( cf->ZtXR_path, "wb" );
 
-	iret = pthread_create(&compute_thread, NULL, ooc_gemm_comp, (void*)&gemm_t);
+	iret = pthread_create(&compute_thread, NULL, ooc_gemm, (void*)&gemm_t);
 	if (iret)
 	{
 		fprintf(stderr, __FILE__ ": Error creating Computation thread (2): %d\n", iret);
@@ -677,6 +712,7 @@ int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W)
 	printf("Computing Z' Y...");
 	fflush(stdout);
 
+	/* Set up dimensions */
 	gemm_t.m = cf->n;
 	gemm_t.n = cf->t;
 	gemm_t.k = cf->n;
@@ -684,7 +720,7 @@ int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W)
 	gemm_t.fp_in  = fopen( cf->Y_path, "rb" );
 	gemm_t.fp_out = fopen( cf->ZtY_path, "wb" );
 
-	iret = pthread_create(&compute_thread, NULL, ooc_gemm_comp, (void*)&gemm_t);
+	iret = pthread_create(&compute_thread, NULL, ooc_gemm, (void*)&gemm_t);
 	if (iret)
 	{
 		fprintf(stderr, __FILE__ ": Error creating Computation thread (3): %d\n", iret);
@@ -699,6 +735,7 @@ int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W)
 	printf(" Done\n");
 	fflush(stdout);
 
+	/* Clean-up */
 	free(gemm_t.in[0]);
 	free(gemm_t.in[1]);
 	free(gemm_t.out[0]);
@@ -747,24 +784,28 @@ void eigenDec(int n, double *Phi, double *Z, double *W)
  *   - Z' XR
  *   - Z' Y
  */
-void* ooc_gemm_comp( void *in ) 
+void* ooc_gemm( void *in ) 
 {
 	ooc_gemm_t *gemm_t = ( ooc_gemm_t *)in;
 
-	double *in_cur  = gemm_t->in[0];
-	double *in_next = gemm_t->in[1];
-	double *out_prev = gemm_t->out[0];
-	double *out_cur = gemm_t->out[1];
-
+	/* Problem dimensions */
 	int m = gemm_t->m,
 	    n = gemm_t->n,
 	    k = gemm_t->k,
 	    n_cols_per_buff = gemm_t->n_cols_per_buff;
 	long int max_elems = n_cols_per_buff * m;
 
+	/* Double buffering */
+	double *in_cur   = gemm_t->in[0];
+	double *in_next  = gemm_t->in[1];
+	double *out_prev = gemm_t->out[0];
+	double *out_cur  = gemm_t->out[1];
+
+	/* BLAS constants */
 	double ONE  = 1.0;
 	double ZERO = 0.0;
 
+	/* Asynchronous IO data structures */
 	struct aiocb aiocb_in_cur,   aiocb_in_next,
 	             aiocb_out_prev, aiocb_out_cur;
 

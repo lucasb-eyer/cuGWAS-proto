@@ -72,6 +72,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 	/* iterators and auxiliar vars */
 	int ib, i, j, k;
 	int nn = n * n;
+	char numths_str[STR_BUFFER_SIZE];
 
 	/* Checking the input arguments */
 	/* printf("n: %d\np: %d\nm: %d\nt: %d\nwXL: %d\nwXR: %d\n", n, p, m, t, wXL, wXR);
@@ -90,6 +91,16 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 			B_path, V_path
 	);
 	fprintf(stderr, "[Warning] y_b not used (set to 1)\n");
+
+	/* Set the number of threads for the multi-threaded BLAS */
+	snprintf(numths_str, STR_BUFFER_SIZE, "%d", cf.NUM_COMPUTE_THREADS);
+#if defined GOTO
+	setenv("GOTO_NUM_THREADS", numths_str, 1);
+#elif defined MKL
+	setenv("MKL_NUM_THREADS", numths_str, 1);
+#else
+	setenv("OMP_NUM_THREADS", numths_str, 1);
+#endif
 
 	/* Memory allocation */
 	// In-core
@@ -247,12 +258,16 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 			int rhss  = wXR * x_inc;
 			dtrsm_(LEFT, LOWER, NO_TRANS, NON_UNIT, &n, &rhss, &ONE, M, &n, x_cur, &n);
 
-            // Set GOTO_NUM_THREADS to 1
-            // Set OMP_NUM_THREADS to nths
-			/*char numths_str[STR_BUFFER_SIZE];*/
-			/*snprintf(numths_str, STR_BUFFER_SIZE, "%d", cf.NUM_COMPUTE_THREADS);*/
-            setenv("GOTO_NUM_THREADS", "1", 1);
-			/*setenv("OMP_NUM_THREADS", numths_str, 1);*/
+			/* Set the number of threads for the multi-threaded BLAS to 1.
+			 * The innermost loop is parallelized using OPENMP */
+			snprintf(numths_str, STR_BUFFER_SIZE, "%d", cf.NUM_COMPUTE_THREADS);
+		#if defined GOTO
+			setenv("GOTO_NUM_THREADS", "1", 1);
+		#elif defined MKL
+			setenv("MKL_NUM_THREADS",  "1", 1);
+		#else
+			setenv("OMP_NUM_THREADS",  "1", 1);
+		#endif
             #pragma omp parallel for private(i, Bij, Vij) schedule(static) num_threads(cf.NUM_COMPUTE_THREADS)
 			for (i = 0; i < x_inc; i++)
 			{
@@ -303,7 +318,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 					error_msg(err, 1);
 				}
 				//int p2 = p*p;
-				//dscal_(&p2, &scorevar, xTSx, &iONE);
+				//dscal_(&p2, &scorevar, Vij, &iONE);
 				for ( k = 0; k < p; k++ )
 					Vij[k*p+k] = sqrt(Vij[k*p+k]);
 			}

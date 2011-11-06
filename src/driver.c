@@ -53,7 +53,7 @@ int main( int argc, char *argv[] )
   sprintf(cf.V_path,    "%s/V.out", dir);
 
   /*fgls_eigen( cf );*/
-  fgls_chol( 
+  fgls_eigen( 
 		  cf.n, cf.p, cf.m, cf.t, cf.wXL, cf.wXR,
 		  cf.x_b, cf.y_b, cf.NUM_COMPUTE_THREADS,
 		  cf.Phi_path, cf.h_path, cf.sigma_path, 

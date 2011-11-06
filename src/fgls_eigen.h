@@ -1,46 +1,46 @@
 #ifndef FGLS_EIGEN_H
 #define FGLS_EIGEN_H
 
-#include <semaphore.h>
 #include "common.h"
-
-#define NUM_BUFFERS_PER_THREAD 2
 
 typedef struct 
 {
+	// Dimensions
+	int m, n, k;
+	long int n_cols_per_buff;
+	// Operands
 	double *Z;
 	FILE *fp_in;
 	FILE *fp_out;
-	int m, n, k;
-	long int n_cols_per_buff;
 	double *in[2];
 	double *out[2];
-	sem_t sem_io;
-	sem_t sem_comp;
 } ooc_gemm_t;
 
 typedef struct {
-	FILE *XR_fp;
-	FILE *Y_fp;
-	FILE *B_fp;
-	FILE *V_fp;
-	double *XL[2];
-	double *XL_b;
-	double *XLtXL;
+	// In-core operands
+	double *W;
+	double *h;
+	double *sigma;
+	double *alpha;
+	double *beta;
+	double *Winv;
 
+	double *XL[2];
+	double *B_t;
+	double *V_tl;
+
+	// Out-of-core operands
 	double *X[NUM_BUFFERS_PER_THREAD];
 	double *Y[NUM_BUFFERS_PER_THREAD];
 	double *B[NUM_BUFFERS_PER_THREAD];
 	double *V[NUM_BUFFERS_PER_THREAD];
 
-	double *h;
-	double *sigma;
-	double *W;
-	double *alpha;
-	double *beta;
-	double *Winv;
-	double *xtSx;
+	FILE *XR_fp;
+	FILE *Y_fp;
+	FILE *B_fp;
+	FILE *V_fp;
 
+	// Configuration
 	FGLS_config_t *cf;
 
 	int id;

@@ -1,7 +1,7 @@
 #ifndef FGLS_COMMON_H
 #define FGLS_COMMON_H
 
-#define DEBUG 0
+#define DEBUG 1
 #define TIMING 0
 #define VAMPIR 0
 
@@ -13,15 +13,15 @@
 
 typedef struct
 {
+  char Phi_path[STR_BUFFER_SIZE];
+  char h_path[STR_BUFFER_SIZE];
+  char sigma_path[STR_BUFFER_SIZE];
   char XL_path[STR_BUFFER_SIZE];
   char XR_path[STR_BUFFER_SIZE];
   char ZtXL_path[STR_BUFFER_SIZE];
   char ZtXR_path[STR_BUFFER_SIZE];
   char Y_path[STR_BUFFER_SIZE];
   char ZtY_path[STR_BUFFER_SIZE];
-  char Phi_path[STR_BUFFER_SIZE];
-  char h_path[STR_BUFFER_SIZE];
-  char sigma_path[STR_BUFFER_SIZE];
   char B_path[STR_BUFFER_SIZE];
   char V_path[STR_BUFFER_SIZE];
 
@@ -35,12 +35,6 @@ typedef struct
   int y_b;
 
   int NUM_COMPUTE_THREADS;
-  /*int NUM_BUFFERS_PER_THREAD;*/
-
-#if TIMING
-  timing* time;
-#endif // TIMING
-
 } FGLS_config_t;
 
 void initialize_config(
