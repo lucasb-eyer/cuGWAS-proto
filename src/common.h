@@ -1,7 +1,7 @@
 #ifndef FGLS_COMMON_H
 #define FGLS_COMMON_H
 
-#define DEBUG 1
+#define DEBUG 0
 #define TIMING 0
 #define VAMPIR 0
 

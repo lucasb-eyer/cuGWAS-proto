@@ -11,60 +11,79 @@ double compare(double *a, double *b, int size);
 
 int main( int argc, char *argv[] ) 
 {
-  char *dir;
+  char *dir, var;
+  int i, nrep;
   FGLS_config_t cf;
+  struct timeval start, end;
 
-  if (argc != 2) 
+  if (argc != 4) 
   {
-    fprintf(stderr, "Usage: %s <data_set_directory>\n", argv[0]);
+    fprintf(stderr, "Usage: %s <variant - [e|m]> <data_set_directory> <#repetitions>\n", argv[0]);
 	fprintf(stderr, "\tnote: data_set_directory must contain files:\n");
-	fprintf(stderr, "X.in\nY.in\nPhi.in\nH.in\nSig.in\n(B_exp.out if checking answer)\n");
+	fprintf(stderr, "- Phi.in\n- H.in\n- Sig.in\n- XL.in\n- XR.in\n- Y.in\n");
     exit(EXIT_FAILURE);
   }
 
-  dir = argv[1];
-  printf("Please enter parameters\n");
-  printf("n: ");                 scanf("%d", &cf.n);
-  printf("p: ");                 scanf("%d", &cf.p);
-  printf("m: ");                 scanf("%d", &cf.m);
-  printf("t: ");                 scanf("%d", &cf.t);
-  printf("width of XL: ");       scanf("%d", &cf.wXL);
-  printf("x_b: ");               scanf("%d", &cf.x_b);
-  printf("y_b: ");               scanf("%d", &cf.y_b);
-  printf("# compute threads: "); scanf("%d", &cf.NUM_COMPUTE_THREADS);
+  var  = argv[1][0];
+  dir  = argv[2];
+  nrep = atoi(argv[3]);
+  /*printf("Please enter parameters\n");*/
+  /*printf("n: ");*/
+  scanf("%d", &cf.n);
+  /*printf("p: ");*/
+  scanf("%d", &cf.p);
+  /*printf("m: ");   */
+  scanf("%d", &cf.m);
+  /*printf("t: "); */
+  scanf("%d", &cf.t);
+  /*printf("width of XL: ");*/
+  scanf("%d", &cf.wXL);
+  /*printf("x_b: "); */
+  scanf("%d", &cf.x_b);
+  /*printf("y_b: "); */
+  scanf("%d", &cf.y_b);
+  /*printf("# compute threads: ");*/
+  scanf("%d", &cf.NUM_COMPUTE_THREADS);
   cf.wXR = cf.p - cf.wXL;
 
-#if TIMING
-  cf.time = (timing*)malloc(sizeof(timing));
-  struct timeval start, end;
   gettimeofday(&start, NULL);
-#endif // TIMING
 
-  sprintf(cf.XL_path,   "%s/XL.in", dir);
-  sprintf(cf.XR_path,   "%s/XR.in", dir);
-  sprintf(cf.ZtXL_path, "%s/XL.tmp", dir);
-  sprintf(cf.ZtXR_path, "%s/XR.tmp", dir);
-  sprintf(cf.Y_path,    "%s/Y.in", dir);
-  sprintf(cf.ZtY_path,  "%s/Y.tmp", dir);
-  sprintf(cf.Phi_path,  "%s/Phi.in", dir);
-  sprintf(cf.h_path,    "%s/H.in", dir);
-  sprintf(cf.sigma_path,"%s/Sig.in", dir);
-  sprintf(cf.B_path,    "%s/B.out", dir);
-  sprintf(cf.V_path,    "%s/V.out", dir);
+  for ( i = 0; i < nrep; i++ )
+  {
+	  sprintf(cf.XL_path,   "%s/XL.in", dir);
+	  sprintf(cf.XR_path,   "%s/XR.in", dir);
+	  sprintf(cf.ZtXL_path, "%s/XL.tmp", dir);
+	  sprintf(cf.ZtXR_path, "%s/XR.tmp", dir);
+	  sprintf(cf.Y_path,    "%s/Y.in", dir);
+	  sprintf(cf.ZtY_path,  "%s/Y.tmp", dir);
+	  sprintf(cf.Phi_path,  "%s/Phi.in", dir);
+	  sprintf(cf.h_path,    "%s/H.in", dir);
+	  sprintf(cf.sigma_path,"%s/Sig.in", dir);
+	  sprintf(cf.B_path,    "%s/B.out", dir);
+	  sprintf(cf.V_path,    "%s/V.out", dir);
 
-  /*fgls_eigen( cf );*/
-  fgls_eigen( 
-		  cf.n, cf.p, cf.m, cf.t, cf.wXL, cf.wXR,
-		  cf.x_b, cf.y_b, cf.NUM_COMPUTE_THREADS,
-		  cf.Phi_path, cf.h_path, cf.sigma_path, 
-		  cf.XL_path, cf.XR_path, cf.Y_path, 
-		  cf.B_path, cf.V_path
-  );
+	  if ( var == 'e' )
+		  fgls_eigen( 
+				  cf.n, cf.p, cf.m, cf.t, cf.wXL, cf.wXR,
+				  cf.x_b, cf.y_b, cf.NUM_COMPUTE_THREADS,
+				  cf.Phi_path, cf.h_path, cf.sigma_path, 
+				  cf.XL_path, cf.XR_path, cf.Y_path, 
+				  cf.B_path, cf.V_path
+		  );
+	  else
+		  fgls_chol( 
+				  cf.n, cf.p, cf.m, cf.t, cf.wXL, cf.wXR,
+				  cf.x_b, cf.y_b, cf.NUM_COMPUTE_THREADS,
+				  cf.Phi_path, cf.h_path, cf.sigma_path, 
+				  cf.XL_path, cf.XR_path, cf.Y_path, 
+				  cf.B_path, cf.V_path
+		  );
+  }
 
-#if TIMING
   gettimeofday(&end, NULL);
-  long total = get_diff_ms(&start, &end);;
-#endif // TIMING
+  long total = get_diff_ms(&start, &end) / nrep; // float?
+  printf("%ld\n", total);
+
 #if DEBUG
   char str_buf[STR_BUFFER_SIZE];
   double *b_mine, *b_exp;

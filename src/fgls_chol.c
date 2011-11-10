@@ -74,12 +74,14 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 	int nn = n * n;
 	char numths_str[STR_BUFFER_SIZE];
 
+#if DEBUG
 	/* Checking the input arguments */
-	/* printf("n: %d\np: %d\nm: %d\nt: %d\nwXL: %d\nwXR: %d\n", n, p, m, t, wXL, wXR);
+	printf("n: %d\np: %d\nm: %d\nt: %d\nwXL: %d\nwXR: %d\n", n, p, m, t, wXL, wXR);
 	printf("x_b: %d\ny_b: %d\nnths: %d\n", x_b, y_b, num_threads);
 	printf("Phi: %s\nh2: %s\ns2: %s\n", Phi_path, h2_path, sigma2_path);
 	printf("XL: %s\nXR: %s\nY: %s\n", XL_path, XR_path, Y_path);
-	printf("B: %s\nV: %s\n", B_path, V_path); */
+	printf("B: %s\nV: %s\n", B_path, V_path);
+#endif
 
 	/* Fill in the config structure */
 	initialize_config(
@@ -90,17 +92,8 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 			XL_path, XR_path, Y_path,
 			B_path, V_path
 	);
-	fprintf(stderr, "[Warning] y_b not used (set to 1)\n");
-
-	/* Set the number of threads for the multi-threaded BLAS */
-	snprintf(numths_str, STR_BUFFER_SIZE, "%d", cf.NUM_COMPUTE_THREADS);
-#if defined GOTO
-	setenv("GOTO_NUM_THREADS", numths_str, 1);
-#elif defined MKL
-	setenv("MKL_NUM_THREADS", numths_str, 1);
-#else
-	setenv("OMP_NUM_THREADS", numths_str, 1);
-#endif
+	if ( y_b != 1 )
+		fprintf(stderr, "[Warning] y_b not used (set to 1)\n");
 
 	/* Memory allocation */
 	// In-core
@@ -117,10 +110,10 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 	// Out-of-core 
 	for (i = 0; i < NUM_BUFFERS_PER_THREAD; i++) 
 	{
-		X[i] = ( double * ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.x_b * cf.p * cf.n * sizeof(double) );
-		Y[i] = ( double * ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.y_b * cf.n * sizeof(double) );
-		B[i] = ( double * ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.x_b * cf.y_b * cf.p * sizeof(double) );
-		V[i] = ( double * ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.x_b * cf.y_b * cf.p * cf.p * sizeof(double) );
+		X[i] = ( double * ) fgls_malloc ( cf.x_b * cf.p * cf.n * sizeof(double) );
+		Y[i] = ( double * ) fgls_malloc ( cf.n * sizeof(double) );
+		B[i] = ( double * ) fgls_malloc ( cf.x_b * cf.p * sizeof(double) );
+		V[i] = ( double * ) fgls_malloc ( cf.x_b * cf.p * cf.p * sizeof(double) );
 	}
 
 	/* Load in-core data */
@@ -189,25 +182,56 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 	aiocb_v_prev_l[0] = &aiocb_v_prev;
 	aiocb_v_cur_l[0]  = &aiocb_v_cur;
 
+#if VAMPIR
+      VT_USER_START("READ_X");
+#endif
 	/* Read first block of XR's */
 	fgls_aio_read( &aiocb_x_cur,
 			       fileno( XR_fp ), x_cur,
 				   MIN( x_b, m ) * wXR * n * sizeof(double), 0 );
+#if VAMPIR
+      VT_USER_END("READ_X");
+#endif
+#if VAMPIR
+      VT_USER_START("READ_Y");
+#endif
 	/* Read first Y */
 	fgls_aio_read( &aiocb_y_cur,
 			       fileno( Y_fp ), y_cur,
 				   n * sizeof(double), 0 );
+#if VAMPIR
+      VT_USER_END("READ_Y");
+#endif
 
 	int iter = 0;
 	for ( j = 0; j < t; j++ )
 	{
+		/* Set the number of threads for the multi-threaded BLAS */
+		snprintf(numths_str, STR_BUFFER_SIZE, "%d", cf.NUM_COMPUTE_THREADS);
+#if defined GOTO
+		setenv("GOTO_NUM_THREADS", numths_str, 1);
+#elif defined MKL
+		setenv("MKL_NUM_THREADS", numths_str, 1);
+#else
+		setenv("OMP_NUM_THREADS", numths_str, 1);
+#endif
+
+#if VAMPIR
+      VT_USER_START("READ_Y");
+#endif
 		/* Read next Y */
 		struct aiocb *aiocb_y_next_p = (struct aiocb *)aiocb_y_next_l[0];
 		fgls_aio_read( aiocb_y_next_p,
 					   fileno( Y_fp ), y_next,
 					   j + 1 >= t ? 0 : n * sizeof(double),
 					   j + 1 >= t ? 0 : (j+1) * n * sizeof(double) );
+#if VAMPIR
+      VT_USER_END("READ_Y");
+#endif
 
+#if VAMPIR
+      VT_USER_START("COMP_J");
+#endif
 		/* M := sigma * ( h^2 Phi - (1 - h^2) I ) */
 		memcpy( M, Phi, n * n * sizeof(double) );
 		alpha = h[j] * sigma[j];
@@ -229,8 +253,14 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 		memcpy( XL, XL_orig, wXL * n * sizeof(double) );
 		dtrsm_(LEFT, LOWER, NO_TRANS, NON_UNIT, &n, &wXL, &ONE, M, &n, XL, &n);
 
+#if VAMPIR
+      VT_USER_START("WAIT_Y");
+#endif
 		/* Wait until current Y is available */
 		fgls_aio_suspend( aiocb_y_cur_l, 1, NULL );
+#if VAMPIR
+      VT_USER_END("WAIT_Y");
+#endif
 
 		/* y := inv(L) y */
 		dtrsv_(LOWER, NO_TRANS, NON_UNIT, &n, M, &n, y_cur, &iONE);
@@ -240,27 +270,65 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 
 		/* V_tl := XL' * XL */
 		dsyrk_(LOWER, TRANS, &wXL, &n, &ONE, XL, &n, &ZERO, V_tl, &wXL);
+#if VAMPIR
+      VT_USER_END("COMP_J");
+#endif
 
 		for (ib = 0; ib < m; ib += x_b) 
 		{
+#if VAMPIR
+      VT_USER_START("READ_X");
+#endif
+	  /*printf("m:  %d\n", m);*/
+	  /*printf("xb: %d\n", x_b);*/
+	  /*printf("ib: %d\n", ib);*/
+	  /*printf("min:    %d\n", MIN( x_b, m - (ib + x_b)));*/
+	  /*printf("min:    %jd\n", MIN( (off_t)x_b, (off_t)m - (ib + x_b)));*/
+	  /*printf("offset: %ld\n", (ib + x_b) * wXR * n * sizeof(double));*/
+	  /*printf("offset: %jd\n", (off_t)(ib + x_b) * wXR * n * sizeof(double));*/
 			/* Read next block of XR's */
 			struct aiocb *aiocb_x_next_p = (struct aiocb *)aiocb_x_next_l[0];
 			fgls_aio_read( aiocb_x_next_p,
 					       fileno( XR_fp ), x_next,
-						   (ib + x_b) >= m ? MIN( x_b, m ) * wXR * n * sizeof(double) : MIN( x_b * wXR * n, (m - (ib + x_b)) * wXR * n ) * sizeof(double),
-						   (ib + x_b) >= m ? 0 : (ib + x_b) * wXR * n * sizeof(double) );
+						   /*(ib + x_b) >= m ? MIN( x_b, m ) * wXR * n * sizeof(double) : MIN( x_b * wXR * n, (m - (ib + x_b)) * wXR * n ) * sizeof(double),*/
+						   (ib + x_b) >= m ? MIN( x_b, m ) * wXR * n * sizeof(double) : MIN( x_b, m - (ib + x_b)) * wXR * n * sizeof(double),
+						   (ib + x_b) >= m ? 0 : (off_t)(ib + x_b) * wXR * n * sizeof(double) );
+#if VAMPIR
+      VT_USER_END("READ_X");
+#endif
 
+#if VAMPIR
+      VT_USER_START("WAIT_X");
+#endif
 			/* Wait until current block of XR's is available */
 			fgls_aio_suspend( aiocb_x_cur_l, 1, NULL );
+#if VAMPIR
+      VT_USER_END("WAIT_X");
+#endif
 
+		/* Set the number of threads for the multi-threaded BLAS */
+		snprintf(numths_str, STR_BUFFER_SIZE, "%d", cf.NUM_COMPUTE_THREADS);
+#if defined GOTO
+		setenv("GOTO_NUM_THREADS", numths_str, 1);
+#elif defined MKL
+		setenv("MKL_NUM_THREADS", numths_str, 1);
+#else
+		setenv("OMP_NUM_THREADS", numths_str, 1);
+#endif
+
+#if VAMPIR
+      VT_USER_START("COMP_IB");
+#endif
 			/* XR := inv(L) XR */
 			int x_inc = MIN(x_b, m - ib);
 			int rhss  = wXR * x_inc;
 			dtrsm_(LEFT, LOWER, NO_TRANS, NON_UNIT, &n, &rhss, &ONE, M, &n, x_cur, &n);
+#if VAMPIR
+      VT_USER_END("COMP_IB");
+#endif
 
 			/* Set the number of threads for the multi-threaded BLAS to 1.
 			 * The innermost loop is parallelized using OPENMP */
-			snprintf(numths_str, STR_BUFFER_SIZE, "%d", cf.NUM_COMPUTE_THREADS);
 		#if defined GOTO
 			setenv("GOTO_NUM_THREADS", "1", 1);
 		#elif defined MKL
@@ -268,7 +336,10 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 		#else
 			setenv("OMP_NUM_THREADS",  "1", 1);
 		#endif
-            #pragma omp parallel for private(i, Bij, Vij) schedule(static) num_threads(cf.NUM_COMPUTE_THREADS)
+#if VAMPIR
+      VT_USER_START("COMP_I");
+#endif
+			#pragma omp parallel for private(Bij, Vij, i, k, info) schedule(static) num_threads(cf.NUM_COMPUTE_THREADS)
 			for (i = 0; i < x_inc; i++)
 			{
 				Bij = &b_cur[i * p];
@@ -303,7 +374,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 				if (info != 0)
 				{
 					char err[STR_BUFFER_SIZE];
-					snprintf(err, STR_BUFFER_SIZE, "dpotrf(V) failed (info: %d)", info);
+					snprintf(err, STR_BUFFER_SIZE, "dpotrf(V) failed (info: %d) - i: %d", info, i);
 					error_msg(err, 1);
 				}
 				dtrsv_(LOWER, NO_TRANS, NON_UNIT, &p, Vij, &p, Bij, &iONE);
@@ -318,18 +389,30 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 					error_msg(err, 1);
 				}
 				//int p2 = p*p;
-				//dscal_(&p2, &scorevar, Vij, &iONE);
+				//dscal_(&p2, &sigma[j], Vij, &iONE);
 				for ( k = 0; k < p; k++ )
 					Vij[k*p+k] = sqrt(Vij[k*p+k]);
 			}
+#if VAMPIR
+      VT_USER_END("COMP_I");
+#endif
 
+#if VAMPIR
+      VT_USER_START("WAIT_BV");
+#endif
 			/* Wait until the previous blocks of B's and V's are written */
 			if ( iter > 0)
 			{
 				fgls_aio_suspend( aiocb_b_prev_l, 1, NULL );
 				fgls_aio_suspend( aiocb_v_prev_l, 1, NULL );
 			}
+#if VAMPIR
+      VT_USER_END("WAIT_BV");
+#endif
 			/* Write current blocks of B's and V's */
+#if VAMPIR
+      VT_USER_START("WRITE_BV");
+#endif
 			struct aiocb *aiocb_b_cur_p;
 			aiocb_b_cur_p = (struct aiocb *) aiocb_b_cur_l[0];
 			fgls_aio_write( aiocb_b_cur_p,
@@ -343,6 +426,9 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 							fileno( V_fp ), v_cur,
 							x_inc * p * p * sizeof(double),
 							(j * m * p * p + ib * p * p) * sizeof(double) );
+#if VAMPIR
+      VT_USER_END("WRITE_BV");
+#endif
 
 			/* Swap buffers */
 			swap_aiocb( &aiocb_x_cur_l, &aiocb_x_next_l );
@@ -358,11 +444,17 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 		swap_buffers( &y_cur, &y_next);
 	}
 
+#if VAMPIR
+      VT_USER_START("WAIT_ALL");
+#endif
 	/* Wait for the remaining IO operations issued */
 	fgls_aio_suspend( aiocb_x_cur_l, 1, NULL );
 	fgls_aio_suspend( aiocb_y_cur_l, 1, NULL );
 	fgls_aio_suspend( aiocb_b_prev_l, 1, NULL );
 	fgls_aio_suspend( aiocb_v_prev_l, 1, NULL );
+#if VAMPIR
+      VT_USER_END("WAIT_ALL");
+#endif
 
 	/* Clean-up */
 	fclose( XR_fp );

@@ -93,14 +93,18 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 	
 	/* Compute the pre-loop operations */
 	snprintf(numths_str, STR_BUFFER_SIZE, "%d", cf.NUM_COMPUTE_THREADS);
-#ifdef GOTO
+#if defined GOTO
 	setenv("GOTO_NUM_THREADS", numths_str, 1);
+#elif defined MKL
+	setenv("MKL_NUM_THREADS", numths_str, 1);
 #else
 	setenv("OMP_NUM_THREADS", numths_str, 1);
 #endif
 	preloop(&cf, Phi, Z, loops_t.W);
-#ifdef GOTO
+#if defined GOTO
 	setenv("GOTO_NUM_THREADS", "1", 1);
+#elif defined MKL
+	setenv("MKL_NUM_THREADS", "1", 1);
 #else
 	setenv("OMP_NUM_THREADS", "1", 1);
 #endif
@@ -627,7 +631,7 @@ int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W)
 	int iret;
 
 	/* Buffer sizes for ooc gemms */
-	long int chunk_size = 1L << 28; // 256 MElems
+	long int chunk_size = 1L << 26; // 64MElems - 28; // 256 MElems
 	chunk_size = chunk_size - chunk_size % (cf->n * sizeof(double));
 	int num_cols = chunk_size / (cf->n * sizeof(double));
 
@@ -641,15 +645,15 @@ int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W)
 	fflush(stdout);
 
 	/* OOC gemms */
-	gemm_t.in[0]  = ( double * ) malloc ( chunk_size * sizeof(double) );
-	gemm_t.in[1]  = ( double * ) malloc ( chunk_size * sizeof(double) );
-	gemm_t.out[0] = ( double * ) malloc ( chunk_size * sizeof(double) );
-	gemm_t.out[1] = ( double * ) malloc ( chunk_size * sizeof(double) );
-	if ( gemm_t.out[1] == NULL )
-	{
-		fprintf(stderr, "Not enough memory for OOC gemm's\n");
-		exit(EXIT_FAILURE);
-	}
+	gemm_t.in[0]  = ( double * ) fgls_malloc ( chunk_size * sizeof(double) );
+	gemm_t.in[1]  = ( double * ) fgls_malloc ( chunk_size * sizeof(double) );
+	gemm_t.out[0] = ( double * ) fgls_malloc ( chunk_size * sizeof(double) );
+	gemm_t.out[1] = ( double * ) fgls_malloc ( chunk_size * sizeof(double) );
+	/*if ( gemm_t.out[1] == NULL )*/
+	/*{*/
+	/*fprintf(stderr, "Not enough memory for OOC gemm's\n");*/
+	/*exit(EXIT_FAILURE);*/
+	/*}*/
 
 	printf("Computing Z' XL...");
 	fflush(stdout);
