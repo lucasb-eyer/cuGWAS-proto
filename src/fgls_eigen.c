@@ -24,6 +24,8 @@
   #include "vt_user.h"
 #endif
 
+#include <stdint.h>
+
 int    preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W);
 void   eigenDec(int n, double *Phi, double *Z, double *W);
 void * ooc_gemm( void *in );
@@ -154,8 +156,10 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 	sync_read(loops_t.sigma, sigma_fp, cf.t, 0);
 	fclose( sigma_fp );
 	// XL
-	XL_fp = fopen( cf.ZtXL_path, "rb" );
-	sync_read( loops_t.XL[0], XL_fp, cf.wXL * cf.n, 0 );
+	for ( i= 0; i < n; i++ )
+		XL_orig[i] = 1.0;
+	XL_fp = fopen( cf.XL_path, "rb" );
+	sync_read( &XL_orig[n], XL_fp, (cf.wXL - 1) * cf.n, 0 );
 	fclose( XL_fp );
 
 	/* Files for out-of-core data: XR, Y, B and V */
@@ -164,7 +168,7 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 	loops_t.B_fp  = fopen( cf.B_path, "wb");
 	loops_t.V_fp  = fopen( cf.V_path, "wb");
 
-	printf("LOOPS\n");
+	/*printf("LOOPS\n");*/
 
 	/* Spawn threads */
 	loops_t_comp = ( ooc_loops_t* ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * sizeof(ooc_loops_t) );
@@ -190,7 +194,7 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 	VT_USER_START("END");
 #endif
 
-	printf("LOOPS Done\n");
+	/*printf("LOOPS Done\n");*/
 
 	/* Clean-up */
 	fclose( loops_t.XR_fp );
@@ -321,12 +325,12 @@ void* ooc_loops(void* in)
   /* Read initial XR's and Y */
   fgls_aio_read( &aiocb_x_cur, 
 		         fileno( loops_t->XR_fp ), x_cur,
-				 MIN( x_b, m ) * wXR * n * sizeof(double), 0 );
+				 (size_t)MIN( x_b, m ) * wXR * n * sizeof(double), 0 );
 
   fgls_aio_read( &aiocb_y_cur,
 		         fileno( loops_t->Y_fp ), y_cur,
-				 id >= t ? 0 : n * y_b * sizeof(double),
-				 id >= t ? 0 : id * n * y_b * sizeof(double) );
+				 id * y_b >= t ? 0 : (size_t)n * MIN(y_b, t - id * y_b) * sizeof(double),
+				 id * y_b >= t ? 0 : (off_t)id * n * y_b * sizeof(double) );
 
   int iter = 0;
   struct timeval t0, t1;
@@ -342,8 +346,8 @@ void* ooc_loops(void* in)
 	struct aiocb *aiocb_y_next_p = (struct aiocb *)aiocb_y_next_l[0];
 	fgls_aio_read( aiocb_y_next_p,
 			       fileno( loops_t->Y_fp ), y_next,
-				   jb + cf->NUM_COMPUTE_THREADS * y_b >= t ? 0 : n * y_b * sizeof(double),
-				   jb + cf->NUM_COMPUTE_THREADS * y_b >= t ? 0 : (jb + y_b * cf->NUM_COMPUTE_THREADS) * n * sizeof(double) );
+				   jb + cf->NUM_COMPUTE_THREADS * y_b >= t ? 0 : (size_t)n * MIN(y_b, t - (jb + cf->NUM_COMPUTE_THREADS * y_b)) * sizeof(double),
+				   jb + cf->NUM_COMPUTE_THREADS * y_b >= t ? 0 : (off_t)(jb + y_b * cf->NUM_COMPUTE_THREADS) * n * sizeof(double) );
 
 #if VAMPIR
       VT_USER_END("READ_Y");
@@ -394,13 +398,13 @@ void* ooc_loops(void* in)
 	for (ll = 0; ll < y_inc; ll++)
 	  for ( k = 0; k < wXL; k++ )
 		  for ( l = 0; l < n; l++ )
-			  XL[ ll * wXL * n + k * n + l ] *= Winv[l];
+			  XL[ ll * wXL * n + k * n + l ] *= Winv[ll * n + l];
       
     /* B_t := XL' * XL */
 	for (ll = 0; ll < y_inc; ll++)
       dgemv_("T", &n, &wXL, &ONE, &XL[ll * wXL * n], &n, &y_cur[ll * n], &iONE, &ZERO, &B_t[ll * wXL], &iONE);
 
-	/* V_tl :=Compute Top-left part of V */
+	/* V_tl := Compute Top-left part of V */
 	for (ll = 0; ll < y_inc; ll++)
 	{
 		dsyrk_("L", "T", // LOWER, NO_TRANS, 
@@ -423,8 +427,8 @@ void* ooc_loops(void* in)
 	    struct aiocb *aiocb_x_next_p = (struct aiocb *)aiocb_x_next_l[0];
 		fgls_aio_read( aiocb_x_next_p,
 				       fileno( loops_t->XR_fp ), x_next,
-					   (ib + x_b) >= m ? MIN( x_b, m ) * wXR * n * sizeof(double) : MIN( x_b * wXR * n, (m - (ib + x_b)) * wXR * n ) * sizeof(double),
-					   (ib + x_b) >= m ? 0 : (ib + x_b) * wXR * n * sizeof(double) );
+					   (ib + x_b) >= m ? (size_t)MIN( x_b, m ) * wXR * n * sizeof(double) : MIN( (size_t)x_b * wXR * n, (size_t)(m - (ib + x_b)) * wXR * n ) * sizeof(double),
+					   (ib + x_b) >= m ? 0 : (off_t)(ib + x_b) * wXR * n * sizeof(double) );
 
 #if VAMPIR
 		VT_USER_END("READ_X");
@@ -448,7 +452,7 @@ void* ooc_loops(void* in)
 		  /* XR := sqrt(Winv) * Z' * XR */
 		  for ( k = 0; k < x_inc*wXR; k++ )
 			  for ( l = 0; l < n; l++ )
-				  x_copy[ k * n + l ] = x_cur[ k * n + l ] * Winv[l];
+				  x_copy[ k * n + l ] = x_cur[ k * n + l ] * Winv[j*n + l];
 		  
 		  /* B_b := WinvZtX * y */
 		  /*dgemv_("T", &n, &mpb_real, &ONE, x_cur, &n, y_cur, &iONE, &ZERO, b_cur, &iONE);*/
@@ -540,14 +544,14 @@ void* ooc_loops(void* in)
 		  aiocb_b_cur_p = (struct aiocb *) aiocb_b_cur_l[k];
 		  fgls_aio_write( aiocb_b_cur_p,
 				          fileno( loops_t->B_fp ), &b_cur[ k * x_inc * p],
-						  x_inc * p * sizeof(double),
-						  ((jb+k) * m * p + ib * p) * sizeof(double) );
+						  (size_t)x_inc * p * sizeof(double),
+						  ((off_t)(jb+k) * m * p + ib * p) * sizeof(double) );
 
 		  aiocb_v_cur_p = (struct aiocb *) aiocb_v_cur_l[k];
 		  fgls_aio_write( aiocb_v_cur_p,
 				          fileno( loops_t->V_fp ), &v_cur[ k * x_inc * p * p],
-						  x_inc * p * p * sizeof(double),
-						  ((jb+k) * m * p * p + ib * p * p) * sizeof(double) );
+						  (size_t)x_inc * p * p * sizeof(double),
+						  ((off_t)(jb+k) * m * p * p + ib * p * p) * sizeof(double) );
 	  }
 #if VAMPIR
       VT_USER_END("WRITE_B");
@@ -563,11 +567,11 @@ void* ooc_loops(void* in)
 	  iter++;
     }
     gettimeofday(&t1, NULL);
-	if (id == 0)
-	{
-		printf("Iter (%d - %d) time: %ld ms\n", jb, jb+y_inc, get_diff_ms(&t0, &t1));
-		fflush(stdout);
-	}
+	/*if (id == 0)*/
+	/*{*/
+	/*printf("Iter (%d - %d) time: %ld ms\n", jb, jb+y_inc, get_diff_ms(&t0, &t1));*/
+	/*fflush(stdout);*/
+	/*}*/
 	/* Swap buffers */
 	swap_aiocb( &aiocb_y_cur_l, &aiocb_y_next_l );
 	swap_buffers( &y_cur, &y_next);
@@ -636,13 +640,13 @@ int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W)
 	int num_cols = chunk_size / (cf->n * sizeof(double));
 
 	/* Z W Z' = Phi */
-	printf("\nEigendecomposition of Phi...");
-	fflush(stdout);
+	/*printf("\nEigendecomposition of Phi...");*/
+	/*fflush(stdout);*/
 
 	eigenDec( cf->n, Phi, Z, W );
 	
-	printf(" Done\n");
-	fflush(stdout);
+	/*printf(" Done\n");*/
+	/*fflush(stdout);*/
 
 	/* OOC gemms */
 	gemm_t.in[0]  = ( double * ) fgls_malloc ( chunk_size * sizeof(double) );
@@ -655,8 +659,8 @@ int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W)
 	/*exit(EXIT_FAILURE);*/
 	/*}*/
 
-	printf("Computing Z' XL...");
-	fflush(stdout);
+	/*printf("Computing Z' XL...");*/
+	/*fflush(stdout);*/
 
 	gemm_t.Z = Z;
 
@@ -684,11 +688,11 @@ int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W)
 	fclose( gemm_t.fp_in );
 	fclose( gemm_t.fp_out );
 
-	printf(" Done\n");
-	fflush(stdout);
+	/*printf(" Done\n");*/
+	/*fflush(stdout);*/
 
-	printf("Computing Z' XR...");
-	fflush(stdout);
+	/*printf("Computing Z' XR...");*/
+	/*fflush(stdout);*/
 
 	/* Set up dimensions */
 	gemm_t.m = cf->n;
@@ -710,11 +714,11 @@ int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W)
 	fclose( gemm_t.fp_in );
 	fclose( gemm_t.fp_out );
 
-	printf(" Done\n");
-	fflush(stdout);
+	/*printf(" Done\n");*/
+	/*fflush(stdout);*/
 
-	printf("Computing Z' Y...");
-	fflush(stdout);
+	/*printf("Computing Z' Y...");*/
+	/*fflush(stdout);*/
 
 	/* Set up dimensions */
 	gemm_t.m = cf->n;
@@ -736,8 +740,8 @@ int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W)
 	fclose( gemm_t.fp_in );
 	fclose( gemm_t.fp_out );
 
-	printf(" Done\n");
-	fflush(stdout);
+	/*printf(" Done\n");*/
+	/*fflush(stdout);*/
 
 	/* Clean-up */
 	free(gemm_t.in[0]);
@@ -831,20 +835,32 @@ void* ooc_gemm( void *in )
 	/* Read first piece of "in" */
 	fgls_aio_read( &aiocb_in_cur,
 	               fileno( gemm_t->fp_in ), in_cur,
-	               MIN( max_elems, k * n ) * sizeof(double), 0);
+	               (size_t)MIN( max_elems, k * n ) * sizeof(double), 0);
 
 	int cur_n;
 	int i;
 	for ( i = 0; i < n; i += n_cols_per_buff ) 
 	{
+		/*printf("i: %d - n: %d\n", i, n);*/
+		/*printf("%d\n", 5000000000);*/
+		/*printf("n_cols_per_buff: %d\n", n_cols_per_buff);*/
+		/*printf("k: %d\n", k);*/
+		/*printf("1: %d\n", ( i + n_cols_per_buff ) );*/
+		/*printf("2: %d\n", ( n - ( i + n_cols_per_buff ) ));*/
+		/*printf("3: %zu\n", ( n - (size_t)( i + n_cols_per_buff ) ) * k);*/
+		/*printf("MIN(%ld, %zu): %zu\n", max_elems, ( n - (size_t)( i + n_cols_per_buff ) ) * k, MIN( max_elems, ( n - (size_t)( i + n_cols_per_buff ) ) * k ));*/
+		/*printf("MIN(%ld, %zu): %zu\n", max_elems, ( n - i ) * m, MIN( max_elems, ( n - i ) * m ));*/
+		/*printf("MAX: %d\n", (size_t)-1);*/
+		/*printf("MAX: %zu\n", SIZE_MAX);*/
 		/* Read next piece of "in" */
 		struct aiocb *aiocb_in_next_p = (struct aiocb *)aiocb_in_next_l[0];
 		fgls_aio_read( aiocb_in_next_p,
 					   fileno( gemm_t->fp_in ), in_next,
-					   i + n_cols_per_buff > n ? 0 : MIN( max_elems, ( n - ( i + n_cols_per_buff ) ) * k ) * sizeof(double),
-					   (i + n_cols_per_buff) * k * sizeof(double) );
+					   i + n_cols_per_buff > n ? 0 : MIN( max_elems, ( n - (size_t)( i + n_cols_per_buff ) ) * k ) * sizeof(double),
+					   (off_t)(i + n_cols_per_buff) * k * sizeof(double) );
 
 		/* Wait for current piece of "in" */
+		/*printf("Wait read\n");*/
 		fgls_aio_suspend( aiocb_in_cur_l, 1, NULL );
 
 		/* Compute */
@@ -854,14 +870,15 @@ void* ooc_gemm( void *in )
 		/* Wait until previous piece of "out" is written */
 		if ( i > 0)
 		{
+			/*printf("Wait write\n");*/
 			fgls_aio_suspend( aiocb_out_prev_l, 1, NULL );
 		}
 		/* Write current piece of "out" */
 		struct aiocb *aiocb_out_cur_p = (struct aiocb *)aiocb_out_cur_l[0];
 		fgls_aio_write( aiocb_out_cur_p,
 						fileno( gemm_t->fp_out ), out_cur,
-						MIN( max_elems, (n - i) * m ) * sizeof(double),
-						i * m * sizeof(double) );
+						MIN( max_elems, (size_t)(n - i) * m ) * sizeof(double),
+						(off_t)i * m * sizeof(double) );
 
 		/* Swap buffers */
 		swap_aiocb( &aiocb_in_cur_l,   &aiocb_in_next_l );

@@ -130,8 +130,10 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 	sync_read(sigma, sigma_fp, cf.t, 0);
 	fclose( sigma_fp );
 	// XL
+	for ( i= 0; i < n; i++ )
+		XL_orig[i] = 1.0;
 	XL_fp = fopen( cf.XL_path, "rb" );
-	sync_read( XL_orig, XL_fp, cf.wXL * cf.n, 0 );
+	sync_read( &XL_orig[n], XL_fp, (cf.wXL - 1) * cf.n, 0 );
 	fclose( XL_fp );
 	
 	/* Files and pointers for out-of-core */

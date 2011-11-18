@@ -58,6 +58,9 @@ void fgls_aio_write(struct aiocb *aiocb, int fildes, void *buf, size_t nbytes, o
 {
 	bzero( (char *)aiocb,  sizeof(struct aiocb) );
 
+	/*printf("Writing %zu bytes\n", nbytes);*/
+	/*printf("Writing offset: %jd\n", offset);*/
+	/*fflush(stdout);*/
 	aiocb->aio_fildes = fildes;
 	aiocb->aio_buf = buf;
 	aiocb->aio_nbytes = nbytes;
