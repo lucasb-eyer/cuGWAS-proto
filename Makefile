@@ -4,7 +4,7 @@ SRCDIR = ./src
 DRIVER = ./bin/driver.x
 
 CFLAGS+=-g -Wall -I$(SRCDIR)/
-LDLIBS += -lm -lrt
+LDLIBS += -lm 
 
 SRCS = $(wildcard $(SRCDIR)/*.c)
 OBJS = $(SRCS:.c=.o)

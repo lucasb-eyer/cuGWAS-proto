@@ -157,9 +157,9 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 	fclose( sigma_fp );
 	// XL
 	for ( i= 0; i < n; i++ )
-		XL_orig[i] = 1.0;
+		loops_t.XL[0][i] = 1.0;
 	XL_fp = fopen( cf.XL_path, "rb" );
-	sync_read( &XL_orig[n], XL_fp, (cf.wXL - 1) * cf.n, 0 );
+	sync_read( &loops_t.XL[0][n], XL_fp, (cf.wXL - 1) * cf.n, 0 );
 	fclose( XL_fp );
 
 	/* Files for out-of-core data: XR, Y, B and V */
