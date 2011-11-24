@@ -129,11 +129,11 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 	sigma_fp = fopen( cf.sigma_path, "r");
 	sync_read(sigma, sigma_fp, cf.t, 0);
 	fclose( sigma_fp );
-	// XL
-	for ( i= 0; i < n; i++ )
-		XL_orig[i] = 1.0;
+	// XL: first column all ones, then columns from XL
+	/*for ( i= 0; i < n; i++ )*/
+	/*XL_orig[i] = 1.0;*/
 	XL_fp = fopen( cf.XL_path, "rb" );
-	sync_read( &XL_orig[n], XL_fp, (cf.wXL - 1) * cf.n, 0 );
+	sync_read( XL_orig, XL_fp, cf.wXL * cf.n, 0 );
 	fclose( XL_fp );
 	
 	/* Files and pointers for out-of-core */
@@ -190,7 +190,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 	/* Read first block of XR's */
 	fgls_aio_read( &aiocb_x_cur,
 			       fileno( XR_fp ), x_cur,
-				   MIN( x_b, m ) * wXR * n * sizeof(double), 0 );
+				   (size_t)MIN( x_b, m ) * wXR * n * sizeof(double), 0 );
 #if VAMPIR
       VT_USER_END("READ_X");
 #endif
@@ -200,7 +200,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 	/* Read first Y */
 	fgls_aio_read( &aiocb_y_cur,
 			       fileno( Y_fp ), y_cur,
-				   n * sizeof(double), 0 );
+				   (size_t)n * sizeof(double), 0 );
 #if VAMPIR
       VT_USER_END("READ_Y");
 #endif
@@ -225,8 +225,8 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 		struct aiocb *aiocb_y_next_p = (struct aiocb *)aiocb_y_next_l[0];
 		fgls_aio_read( aiocb_y_next_p,
 					   fileno( Y_fp ), y_next,
-					   j + 1 >= t ? 0 : n * sizeof(double),
-					   j + 1 >= t ? 0 : (j+1) * n * sizeof(double) );
+					   j + 1 >= t ? 0 : (size_t)n * sizeof(double),
+					   j + 1 >= t ? 0 : (off_t)(j+1) * n * sizeof(double) );
 #if VAMPIR
       VT_USER_END("READ_Y");
 #endif
@@ -281,20 +281,13 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 #if VAMPIR
       VT_USER_START("READ_X");
 #endif
-	  /*printf("m:  %d\n", m);*/
-	  /*printf("xb: %d\n", x_b);*/
-	  /*printf("ib: %d\n", ib);*/
-	  /*printf("min:    %d\n", MIN( x_b, m - (ib + x_b)));*/
-	  /*printf("min:    %jd\n", MIN( (off_t)x_b, (off_t)m - (ib + x_b)));*/
-	  /*printf("offset: %ld\n", (ib + x_b) * wXR * n * sizeof(double));*/
-	  /*printf("offset: %jd\n", (off_t)(ib + x_b) * wXR * n * sizeof(double));*/
 			/* Read next block of XR's */
+	  /*printf("Read XR - ib: %d\n", ib);*/
 			struct aiocb *aiocb_x_next_p = (struct aiocb *)aiocb_x_next_l[0];
 			fgls_aio_read( aiocb_x_next_p,
 					       fileno( XR_fp ), x_next,
-						   /*(ib + x_b) >= m ? MIN( x_b, m ) * wXR * n * sizeof(double) : MIN( x_b * wXR * n, (m - (ib + x_b)) * wXR * n ) * sizeof(double),*/
-						   (ib + x_b) >= m ? MIN( x_b, m ) * wXR * n * sizeof(double) : MIN( x_b, m - (ib + x_b)) * wXR * n * sizeof(double),
-						   (ib + x_b) >= m ? 0 : (off_t)(ib + x_b) * wXR * n * sizeof(double) );
+						   ((size_t)ib + x_b) >= m ? (size_t)MIN( x_b, m ) * wXR * n * sizeof(double) : MIN((size_t)x_b, m - ((size_t)ib + x_b)) * wXR * n * sizeof(double),
+						   ((off_t)ib + x_b) >= m ? 0 : ((off_t)ib + x_b) * wXR * n * sizeof(double) );
 #if VAMPIR
       VT_USER_END("READ_X");
 #endif
@@ -303,6 +296,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
       VT_USER_START("WAIT_X");
 #endif
 			/* Wait until current block of XR's is available */
+	  /*printf("Wait XR - ib: %d\n", ib);*/
 			fgls_aio_suspend( aiocb_x_cur_l, 1, NULL );
 #if VAMPIR
       VT_USER_END("WAIT_X");
@@ -419,15 +413,15 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 			aiocb_b_cur_p = (struct aiocb *) aiocb_b_cur_l[0];
 			fgls_aio_write( aiocb_b_cur_p,
 							fileno( B_fp ), b_cur,
-							x_inc * p * sizeof(double),
-							(j * m * p + ib * p) * sizeof(double) );
+							(size_t)x_inc * p * sizeof(double),
+							((off_t)j * m * p + (off_t)ib * p) * sizeof(double) );
 
 			struct aiocb *aiocb_v_cur_p;
 			aiocb_v_cur_p = (struct aiocb *) aiocb_v_cur_l[0];
 			fgls_aio_write( aiocb_v_cur_p,
 							fileno( V_fp ), v_cur,
-							x_inc * p * p * sizeof(double),
-							(j * m * p * p + ib * p * p) * sizeof(double) );
+							(size_t)x_inc * p * p * sizeof(double),
+							((off_t)j * m * p * p + (off_t)ib * p * p) * sizeof(double) );
 #if VAMPIR
       VT_USER_END("WRITE_BV");
 #endif

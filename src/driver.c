@@ -121,19 +121,6 @@ int main( int argc, char *argv[] )
   printf("Max elemental diff: %lf\n", max);
 #endif // DEBUG
 
-#if TIMING
-  if (!cf.time) {
-    return 0;
-  }
-  printf("-- timing_info [    x_b    total(ms) ] = [      IO    |    COMP   |  IO_wait  | COMP_wait ];\n");
-  printf("-- timing_info [ %6d    %6ld    ] = [ %10ld |%10ld |%10ld |%10ld ];\n", 
-		  cf.x_b, 
-		  total, 
-		  cf.time.io_time, 
-		  cf.time.compute_time, 
-          cf.time.io_mutex_wait_time, 
-		  cf.time.comp_mutex_wait_time);
-#endif // TIMING
   return 0;
 }
 

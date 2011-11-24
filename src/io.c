@@ -36,9 +36,9 @@ void fgls_aio_read(struct aiocb *aiocb, int fildes, void *buf, size_t nbytes, of
 {
 	bzero( (char *)aiocb,  sizeof(struct aiocb) );
 
-	printf("Reading %zu bytes\n", nbytes);
-	printf("Reading offset: %jd\n", offset);
-	fflush(stdout);
+	/*printf("Reading %zu bytes\n", nbytes);*/
+	/*printf("Reading offset: %jd\n", offset);*/
+	/*fflush(stdout);*/
 	aiocb->aio_fildes = fildes;
 	aiocb->aio_buf = buf;
 	aiocb->aio_nbytes = nbytes;
@@ -84,8 +84,8 @@ void fgls_aio_suspend(const struct aiocb * const cblist[],
 		perror("aio_suspend error");
 		exit( EXIT_FAILURE );
 	}
-	/*printf( "%zu\n", cblist[-2]->aio_nbytes );*/
-	/*fflush(stdout);*/
+
+	/*printf("Suspend: %zu bytes expected\n", cblist[0]->aio_nbytes);*/
 	if ( aio_return( (struct aiocb *)cblist[0] ) != cblist[0]->aio_nbytes )
 	{
 		perror("aio_suspend error - data not read completely");

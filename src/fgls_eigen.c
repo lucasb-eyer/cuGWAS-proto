@@ -155,11 +155,9 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 	sigma_fp = fopen( cf.sigma_path, "r");
 	sync_read(loops_t.sigma, sigma_fp, cf.t, 0);
 	fclose( sigma_fp );
-	// XL
-	for ( i= 0; i < n; i++ )
-		loops_t.XL[0][i] = 1.0;
-	XL_fp = fopen( cf.XL_path, "rb" );
-	sync_read( &loops_t.XL[0][n], XL_fp, (cf.wXL - 1) * cf.n, 0 );
+	// XL: first column all ones, then columns from XL
+	XL_fp = fopen( cf.ZtXL_path, "rb" );
+	sync_read( loops_t.XL[0], XL_fp, cf.wXL * cf.n, 0 );
 	fclose( XL_fp );
 
 	/* Files for out-of-core data: XR, Y, B and V */
@@ -835,32 +833,20 @@ void* ooc_gemm( void *in )
 	/* Read first piece of "in" */
 	fgls_aio_read( &aiocb_in_cur,
 	               fileno( gemm_t->fp_in ), in_cur,
-	               (size_t)MIN( max_elems, k * n ) * sizeof(double), 0);
+	               MIN( (size_t)max_elems, (size_t)k * n ) * sizeof(double), 0);
 
 	int cur_n;
 	int i;
 	for ( i = 0; i < n; i += n_cols_per_buff ) 
 	{
-		/*printf("i: %d - n: %d\n", i, n);*/
-		/*printf("%d\n", 5000000000);*/
-		/*printf("n_cols_per_buff: %d\n", n_cols_per_buff);*/
-		/*printf("k: %d\n", k);*/
-		/*printf("1: %d\n", ( i + n_cols_per_buff ) );*/
-		/*printf("2: %d\n", ( n - ( i + n_cols_per_buff ) ));*/
-		/*printf("3: %zu\n", ( n - (size_t)( i + n_cols_per_buff ) ) * k);*/
-		/*printf("MIN(%ld, %zu): %zu\n", max_elems, ( n - (size_t)( i + n_cols_per_buff ) ) * k, MIN( max_elems, ( n - (size_t)( i + n_cols_per_buff ) ) * k ));*/
-		/*printf("MIN(%ld, %zu): %zu\n", max_elems, ( n - i ) * m, MIN( max_elems, ( n - i ) * m ));*/
-		/*printf("MAX: %d\n", (size_t)-1);*/
-		/*printf("MAX: %zu\n", SIZE_MAX);*/
 		/* Read next piece of "in" */
 		struct aiocb *aiocb_in_next_p = (struct aiocb *)aiocb_in_next_l[0];
 		fgls_aio_read( aiocb_in_next_p,
 					   fileno( gemm_t->fp_in ), in_next,
 					   i + n_cols_per_buff > n ? 0 : MIN( max_elems, ( n - (size_t)( i + n_cols_per_buff ) ) * k ) * sizeof(double),
-					   (off_t)(i + n_cols_per_buff) * k * sizeof(double) );
+					   i + n_cols_per_buff > n ? 0 : (off_t)(i + n_cols_per_buff) * k * sizeof(double) );
 
 		/* Wait for current piece of "in" */
-		/*printf("Wait read\n");*/
 		fgls_aio_suspend( aiocb_in_cur_l, 1, NULL );
 
 		/* Compute */
@@ -870,7 +856,6 @@ void* ooc_gemm( void *in )
 		/* Wait until previous piece of "out" is written */
 		if ( i > 0)
 		{
-			/*printf("Wait write\n");*/
 			fgls_aio_suspend( aiocb_out_prev_l, 1, NULL );
 		}
 		/* Write current piece of "out" */
