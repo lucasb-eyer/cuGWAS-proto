@@ -43,6 +43,12 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 	double alpha;
 	double beta;
 
+	/* sigma2.score */
+	double *scoreB_t;
+	double *scoreV_tl;
+	double *scoreYmXB;
+	double res_sigma;
+
 	/* Out-of-core operands */
 	double *X[NUM_BUFFERS_PER_THREAD];
 	double *Y[NUM_BUFFERS_PER_THREAD];
@@ -63,8 +69,9 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 
 
 	/* BLAS / LAPACK constants */
-	double ONE = 1.0;
 	double ZERO = 0.0;
+	double ONE = 1.0;
+	double MINUS_ONE = -1.0;
 	int iONE = 1;
 	/* LAPACK error value */
 	int info;
@@ -106,6 +113,11 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 	XL      = ( double * ) fgls_malloc ( cf.wXL * cf.n * sizeof(double) );
 	B_t  = ( double * ) fgls_malloc ( cf.wXL * sizeof(double) );
 	V_tl = ( double * ) fgls_malloc ( cf.wXL * cf.wXL * sizeof(double) );
+
+	// sigma2.score
+	scoreB_t  = ( double * ) fgls_malloc ( cf.wXL * sizeof(double) );
+	scoreV_tl = ( double * ) fgls_malloc ( cf.wXL * cf.wXL * sizeof(double) );
+	scoreYmXB = ( double * ) fgls_malloc ( cf.n * sizeof(double) );
 
 	// Out-of-core 
 	for (i = 0; i < NUM_BUFFERS_PER_THREAD; i++) 
@@ -263,6 +275,9 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 #if VAMPIR
       VT_USER_END("WAIT_Y");
 #endif
+	    // Copy y for sigma2.score
+		for( k = 0; k < n; k++ )
+			scoreYmXB[k] = y_cur[k];
 
 		/* y := inv(L) y */
 		dtrsv_(LOWER, NO_TRANS, NON_UNIT, &n, M, &n, y_cur, &iONE);
@@ -276,13 +291,38 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
       VT_USER_END("COMP_J");
 #endif
 
+		/* Compute sigma2.score */
+		// copy B_t and V_tl
+		for( k = 0; k < wXL; k++ )
+			scoreB_t[k] = B_t[k];
+		for( k = 0; k < wXL*wXL; k++ )
+			scoreV_tl[k] = V_tl[k];
+		// XB
+		dpotrf_(LOWER, &wXL, scoreV_tl, &wXL, &info);
+		if (info != 0)
+		{
+			char err[STR_BUFFER_SIZE];
+			snprintf(err, STR_BUFFER_SIZE, "dpotrf(scoreV) failed (info: %d) - i: %d", info, i);
+			error_msg(err, 1);
+		}
+		dtrsv_(LOWER, NO_TRANS, NON_UNIT, &wXL, scoreV_tl, &wXL, scoreB_t, &iONE);
+		dtrsv_(LOWER,    TRANS, NON_UNIT, &wXL, scoreV_tl, &wXL, scoreB_t, &iONE);
+		// YmXB
+		dgemv_(NO_TRANS, 
+				&n, &wXL, 
+				&MINUS_ONE, XL_orig, &n, scoreB_t, &iONE,
+				&ONE, scoreYmXB, &iONE);
+		// residual sigma
+		dtrsv_(LOWER, NO_TRANS, NON_UNIT, 
+				&n, M, &n, scoreYmXB, &iONE);
+		res_sigma = ddot_(&n, scoreYmXB, &iONE, scoreYmXB, &iONE) / (n - wXL);
+
 		for (ib = 0; ib < m; ib += x_b) 
 		{
 #if VAMPIR
       VT_USER_START("READ_X");
 #endif
 			/* Read next block of XR's */
-	  /*printf("Read XR - ib: %d\n", ib);*/
 			struct aiocb *aiocb_x_next_p = (struct aiocb *)aiocb_x_next_l[0];
 			fgls_aio_read( aiocb_x_next_p,
 					       fileno( XR_fp ), x_next,
@@ -296,7 +336,6 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
       VT_USER_START("WAIT_X");
 #endif
 			/* Wait until current block of XR's is available */
-	  /*printf("Wait XR - ib: %d\n", ib);*/
 			fgls_aio_suspend( aiocb_x_cur_l, 1, NULL );
 #if VAMPIR
       VT_USER_END("WAIT_X");
@@ -365,7 +404,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 						&ONE, &x_cur[i * wXR * n], &n, 
 						&ZERO, &Vij[wXL * p + wXL], &p); // V_BR
 
-				/* B := inv(V) * y */
+				/* B := inv(V) * B */
 				dpotrf_(LOWER, &p, Vij, &p, &info);
 				if (info != 0)
 				{
@@ -384,8 +423,8 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 					snprintf(err, STR_BUFFER_SIZE, "dpotri failed (info: %d)", info);
 					error_msg(err, 1);
 				}
-				//int p2 = p*p;
-				//dscal_(&p2, &sigma[j], Vij, &iONE);
+				int p2 = p*p;
+				dscal_(&p2, &res_sigma, Vij, &iONE);
 				for ( k = 0; k < p; k++ )
 					Vij[k*p+k] = sqrt(Vij[k*p+k]);
 			}
@@ -467,6 +506,10 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 	free( XL_orig );
 	free( B_t  );
 	free( V_tl );
+
+	free( scoreB_t );
+	free( scoreV_tl );
+	free( scoreYmXB );
 
 	for (i = 0; i < NUM_BUFFERS_PER_THREAD; i++) 
 	{

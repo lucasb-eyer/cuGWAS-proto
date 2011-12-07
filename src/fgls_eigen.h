@@ -5,6 +5,22 @@
 
 typedef struct 
 {
+	// In-core operands
+	double *Z;
+	double *W;
+	double *h2;
+	double *sigma2;
+	double *XL_orig;
+	double *ZtXL;
+	// Out-of-core operands
+	FILE *fp_Y;
+	FILE *fp_ZtY;
+	// Output
+	double *res_sigma;
+} ooc_res_sigma_t;
+
+typedef struct 
+{
 	// Dimensions
 	int m, n, k;
 	long int n_cols_per_buff;
@@ -18,14 +34,17 @@ typedef struct
 
 typedef struct {
 	// In-core operands
+	/*double *Z;*/
 	double *W;
 	double *h;
 	double *sigma;
+	double *res_sigma;
 	double *alpha;
 	double *beta;
 	double *Winv;
 
 	double *XL[2];
+	double *XL_orig;
 	double *B_t;
 	double *V_tl;
 

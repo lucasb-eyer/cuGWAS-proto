@@ -26,9 +26,10 @@
 
 #include <stdint.h>
 
-int    preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W);
+int    preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W, double *res_sigma);
 void   eigenDec(int n, double *Phi, double *Z, double *W);
 void * ooc_gemm( void *in );
+void residual_sigma( FGLS_config_t *fgls_cf, ooc_res_sigma_t *cf ); 
 void * ooc_loops(void* in);
 
 /*
@@ -45,7 +46,7 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 
 	/* Preloop computation */
 	double *Phi,
-	       *Z;
+		   *Z;
 	FILE *Phi_fp, *h_fp, *sigma_fp,
 	     *XL_fp;
 
@@ -85,8 +86,9 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 #endif
 	/* Allocate memory for the eigendecomposition */
 	Phi = ( double * ) fgls_malloc ( cf.n * cf.n * sizeof(double) );
-	Z   = ( double * ) fgls_malloc ( cf.n * cf.n * sizeof(double) );
+	Z = ( double * ) fgls_malloc ( cf.n * cf.n * sizeof(double) );
 	loops_t.W = ( double * ) fgls_malloc ( cf.n * sizeof(double) );
+	loops_t.res_sigma = ( double * ) fgls_malloc ( cf.t * sizeof(double) );
 	
 	/* Load Phi */
 	Phi_fp = fopen( cf.Phi_path, "rb" );
@@ -102,7 +104,7 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 #else
 	setenv("OMP_NUM_THREADS", numths_str, 1);
 #endif
-	preloop(&cf, Phi, Z, loops_t.W);
+	preloop(&cf, Phi, Z, loops_t.W, loops_t.res_sigma);
 #if defined GOTO
 	setenv("GOTO_NUM_THREADS", "1", 1);
 #elif defined MKL
@@ -131,6 +133,7 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 	loops_t.Winv  = ( double * ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.x_b * cf.n * sizeof(double) );
 	// The original in XL[0]
 	// The copy to overwrite in XL[1]
+	loops_t.XL_orig = ( double * ) fgls_malloc ( cf.wXL * cf.n * sizeof(double) );
 	loops_t.XL[0] = ( double * ) fgls_malloc ( cf.wXL * cf.n * sizeof(double) );
 	loops_t.XL[1] = ( double * ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.wXL * cf.n * cf.y_b * sizeof(double) );
 	// Reusable B_Top and V_TopLeft
@@ -158,6 +161,9 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 	// XL: first column all ones, then columns from XL
 	XL_fp = fopen( cf.ZtXL_path, "rb" );
 	sync_read( loops_t.XL[0], XL_fp, cf.wXL * cf.n, 0 );
+	fclose( XL_fp );
+	XL_fp = fopen( cf.XL_path, "rb" );
+	sync_read( loops_t.XL_orig, XL_fp, cf.wXL * cf.n, 0 );
 	fclose( XL_fp );
 
 	/* Files for out-of-core data: XR, Y, B and V */
@@ -207,6 +213,7 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 		free( loops_t.B[i] );
 		free( loops_t.V[i] );
 	}
+	free( loops_t.XL_orig );
 	free( loops_t.XL[0] );
 	free( loops_t.XL[1] );
 	free( loops_t.B_t  );
@@ -214,6 +221,7 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 
 	free( loops_t.h );
 	free( loops_t.sigma );
+	free( loops_t.res_sigma );
 	free( loops_t.W );
 
 	free( loops_t.alpha );
@@ -246,6 +254,7 @@ void* ooc_loops(void* in)
   double *W      =  loops_t->W;
   double *h      =  loops_t->h;
   double *sigma  =  loops_t->sigma;
+  double *res_sigma  =  loops_t->res_sigma;
   double *alpha  = loops_t->alpha, 
 		 *beta   = loops_t->beta;
   double *Winv = &loops_t->Winv[id * y_b * n];
@@ -254,6 +263,12 @@ void* ooc_loops(void* in)
   double *XL     = &loops_t->XL[1][id * wXL * n * y_b];
   double *B_t    = &loops_t->B_t[id * wXL * y_b];
   double *V_tl   = &loops_t->V_tl[id * wXL * wXL * y_b];
+
+	/* sigma2.score */
+  /*double *scoreB_t;*/
+  /*double *scoreV_tl;*/
+  /*double *scoreYmXB;*/
+  /*double *res_sigma;*/
 
   /* Double buffering pointers */
   double *x_cur  = &loops_t->X[0][id * n * wXR * x_b];
@@ -266,8 +281,9 @@ void* ooc_loops(void* in)
   double *v_prev = &loops_t->V[1][id * p * p * x_b * y_b];
 
   /* BLAS / LAPACK constants */
-  double ONE = 1.0;
   double ZERO = 0.0;
+  double ONE = 1.0;
+  /*double MINUS_ONE = -1.0;*/
   int iONE = 1;
   /* LAPACK error value */
   int info;
@@ -279,6 +295,12 @@ void* ooc_loops(void* in)
 
   /* XR used many times and overwritten, need to work on a copy */
   double *x_copy = (double *) fgls_malloc (x_b * wXR * n * sizeof(double));
+
+  /* sigma2.score */
+  /*scoreB_t  = (double *) fgls_malloc (wXL * y_b * sizeof(double));*/
+  /*scoreV_tl = (double *) fgls_malloc (wXL * wXL * y_b * sizeof(double));*/
+  /*scoreYmXB = (double *) fgls_malloc (n * y_b * sizeof(double));*/
+  /*res_sigma = (double *) fgls_malloc (y_b * sizeof(double));*/
 
   /* Asynchronous IO data structures */
   struct aiocb  aiocb_x_cur,   aiocb_x_next,
@@ -371,6 +393,9 @@ void* ooc_loops(void* in)
 #if VAMPIR
     VT_USER_START("COMP_LOOP_Y_CODE");
 #endif
+	/* Copy y for sigma2.score */
+	/*memcpy( scoreYmXB, y_cur, n * y_inc * sizeof(double) );*/
+
 	/* Set the scalars alpha and beta to compute: 
 	 *     Winv = alpha W + beta I */
     for (k = 0; k < y_inc; k++)
@@ -410,6 +435,57 @@ void* ooc_loops(void* in)
 				&ONE, &XL[ll * wXL * n], &n, // KL KL' 
 				&ZERO, &V_tl[ll * wXL * wXL], &wXL); // V_TL
 	}
+
+	/* Compute sigma2.score's */
+	// copy B_t and V_tl
+	/*memcpy( scoreB_t,  B_t,  y_inc * wXL * sizeof(double) );*/
+	/*memcpy( scoreV_tl, V_tl, y_inc * wXL * wXL * sizeof(double) );*/
+	// XB
+	/*double *sc_B_t, *sc_V_tl;*/
+	/*for ( ll = 0; ll < y_inc; ll++ )*/
+	/*{*/
+	/*sc_B_t  = &scoreB_t [ ll * wXL ];*/
+	/*sc_V_tl = &scoreV_tl[ ll * wXL * wXL ];*/
+	/**/
+	/*dpotrf_(LOWER, &wXL, sc_V_tl, &wXL, &info);*/
+	/*if (info != 0)*/
+	/*{*/
+	/*char err[STR_BUFFER_SIZE];*/
+	/*snprintf(err, STR_BUFFER_SIZE, "sigma2.score: dpotrf(scoreV(%d)) failed (info: %d) - i: %d", ll, info, i);*/
+	/*error_msg(err, 1);*/
+	/*}*/
+	/*printf("V_tl[%d] = %.16e\n", ll, sc_V_tl[0]);*/
+	/*dtrsv_(LOWER, NO_TRANS, NON_UNIT, &wXL, sc_V_tl, &wXL, sc_B_t, &iONE);*/
+	/*dtrsv_(LOWER,    TRANS, NON_UNIT, &wXL, sc_V_tl, &wXL, sc_B_t, &iONE);*/
+	/*printf("B_t [%d] = %.16e\n", ll, sc_B_t[0]);*/
+	/*}*/
+	// YmXB
+	/*double *XL_orig = XL[0];*/
+	/*printf("XL[0] = %.16e\n", loops_t->XL_orig[0]);*/
+	/*printf("YmXB[0] = %.16e\n", scoreYmXB[0]);*/
+	/*printf("YmXB[1] = %.16e\n", scoreYmXB[n]);*/
+	/*dgemm_(NO_TRANS, NO_TRANS,*/
+	/*&n, &y_inc, &wXL, */
+	/*&MINUS_ONE, loops_t->XL_orig, &n, scoreB_t, &wXL,*/
+	/*&ONE, scoreYmXB, &n);*/
+	/*printf("YmXB[0] = %.16e\n", scoreYmXB[0]);*/
+	/*printf("YmXB[1] = %.16e\n", scoreYmXB[n]);*/
+	// residual sigma
+	/*double *scoreYmXB_tmp = (double *) fgls_malloc ( n * y_inc * sizeof(double) );*/
+	/*dgemm_(TRANS, NO_TRANS,*/
+	/*&n, &y_inc, &n, */
+	/*&ONE, loops_t->Z, &n, scoreYmXB, &n,*/
+	/*&ZERO, scoreYmXB_tmp, &n);*/
+	/*for ( ll = 0; ll < y_inc; ll++ )*/
+	/*{*/
+	/*for ( k = 0; k < n; k++ )*/
+	/*{*/
+	/*scoreYmXB_tmp[ ll * n + k ] = scoreYmXB_tmp[ ll * n + k ] * Winv[ ll * n + k ];*/
+	/*}*/
+	/*res_sigma[ll] = ddot_(&n, &scoreYmXB[ ll * n ], &iONE, */
+	/*&scoreYmXB[ ll * n ], &iONE) / (n - wXL);*/
+	/*printf("sigma[%d] = %.16e\n", ll, res_sigma[ll]);*/
+	/*}*/
 
 #if VAMPIR
     VT_USER_END("COMP_LOOP_Y_CODE");
@@ -495,7 +571,7 @@ void* ooc_loops(void* in)
 				dtrsv_(LOWER, NO_TRANS, NON_UNIT, &p, Vij, &p, Bij, &iONE);
 				dtrsv_(LOWER,    TRANS, NON_UNIT, &p, Vij, &p, Bij, &iONE);
 
-				// V = inv( X' inv(M) X)
+				// V = res_sigma * inv( X' inv(M) X)
 				dpotri_(LOWER, &p, Vij, &p, &info);
 				if (info != 0)
 				{
@@ -503,8 +579,8 @@ void* ooc_loops(void* in)
 					snprintf(err, STR_BUFFER_SIZE, "dpotri failed (info: %d)", info);
 					error_msg(err, 1);
 				}
-				// int p2 = p*p;
-				// dscal_(&p2, &scorevar, Vij, &iONE);
+				int p2 = p*p;
+				dscal_(&p2, &res_sigma[jb+j], Vij, &iONE);
 				for ( k = 0; k < p; k++ )
 					Vij[k*p+k] = sqrt(Vij[k*p+k]);
 		  }
@@ -602,7 +678,13 @@ void* ooc_loops(void* in)
 #endif
 
 	/* Clean-up */
-  free( x_copy );
+	  free( x_copy );
+
+  /*free( scoreB_t  );*/
+  /*free( scoreV_tl );*/
+  /*free( scoreYmXB );*/
+  /*free( res_sigma );*/
+  
   free( aiocb_b_prev );
   free( aiocb_b_cur  );
   free( aiocb_v_prev );
@@ -624,8 +706,9 @@ void* ooc_loops(void* in)
  *   - Z W Z' = Phi
  *   - Z' X
  *   - Z' Y
+ *   - residual sigma's
  */
-int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W) 
+int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W, double *res_sigma) 
 {
 	/* Threads for ooc gemms */
 	ooc_gemm_t gemm_t;
@@ -636,6 +719,10 @@ int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W)
 	long int chunk_size = 1L << 26; // 64MElems - 28; // 256 MElems
 	chunk_size = chunk_size - chunk_size % (cf->n * sizeof(double));
 	int num_cols = chunk_size / (cf->n * sizeof(double));
+
+	/* residual sigma's */
+	FILE *fp;
+	ooc_res_sigma_t res_sigma_t;
 
 	/* Z W Z' = Phi */
 	/*printf("\nEigendecomposition of Phi...");*/
@@ -746,6 +833,47 @@ int preloop(FGLS_config_t *cf, double *Phi, double *Z, double *W)
 	free(gemm_t.in[1]);
 	free(gemm_t.out[0]);
 	free(gemm_t.out[1]);
+
+	/* 
+	 * residual sigma's 
+	 */
+	res_sigma_t.h2      = (double*) fgls_malloc ( cf->t * sizeof(double) );
+	res_sigma_t.sigma2  = (double*) fgls_malloc ( cf->t * sizeof(double) );
+	res_sigma_t.XL_orig = (double*) fgls_malloc ( cf->wXL * cf->n * sizeof(double) );
+	res_sigma_t.ZtXL    = (double*) fgls_malloc ( cf->wXL * cf->n * sizeof(double) );
+
+	res_sigma_t.Z = Z;
+	res_sigma_t.W = W;
+	res_sigma_t.fp_Y   = fopen( cf->Y_path, "rb" );
+	res_sigma_t.fp_ZtY = fopen( cf->ZtY_path, "rb" );
+	res_sigma_t.res_sigma = res_sigma;
+	/* Load h2 */
+	fp = fopen( cf->h_path, "rb" );
+	sync_read( res_sigma_t.h2, fp, cf->t, 0 );
+	fclose( fp );
+	/* Load sigma2 */
+	fp = fopen( cf->sigma_path, "rb" );
+	sync_read( res_sigma_t.sigma2, fp, cf->t, 0 );
+	fclose( fp );
+	/* Load XL original */
+	fp = fopen( cf->XL_path, "rb" );
+	sync_read( res_sigma_t.XL_orig, fp, cf->n * cf->wXL, 0 );
+	fclose( fp );
+	/* Load ZtXl */
+	fp = fopen( cf->ZtXL_path, "rb" );
+	sync_read( res_sigma_t.ZtXL, fp, cf->n * cf->wXL, 0 );
+	fclose( fp );
+
+	residual_sigma( cf, &res_sigma_t );
+
+	/* Clean-up */
+	free( res_sigma_t.h2 );
+	free( res_sigma_t.sigma2 );
+	free( res_sigma_t.XL_orig );
+	free( res_sigma_t.ZtXL );
+
+	fclose( res_sigma_t.fp_Y );
+	fclose( res_sigma_t.fp_ZtY );
 
 	return 0;
 }
@@ -876,5 +1004,212 @@ void* ooc_gemm( void *in )
 	fgls_aio_suspend( aiocb_in_cur_l, 1, NULL );
 	fgls_aio_suspend( aiocb_out_prev_l, 1, NULL );
 
+	free( aiocb_in_cur_l   );
+	free( aiocb_in_next_l  );
+	free( aiocb_out_prev_l );
+	free( aiocb_out_cur_l  );
+
 	pthread_exit(NULL);
+}
+
+/*
+ * Compute residual sigma's
+ */
+void residual_sigma( FGLS_config_t *fgls_cf, ooc_res_sigma_t *cf ) 
+{
+	/* Problem dimensions */
+	int n = fgls_cf->n,
+	    t = fgls_cf->t,
+		wXL = fgls_cf->wXL,
+	    y_b = fgls_cf->y_b,
+		j, k, l, ll;
+
+	/* BLAS constants */
+	double ZERO = 0.0;
+	double ONE  = 1.0;
+	double MINUS_ONE  = -1.0;
+	int iONE = 1;
+	/* LAPACK error */
+	int info;
+
+	/* intermediate values */
+	double *alpha = (double *) fgls_malloc (y_b * sizeof(double));
+	double *beta  = (double *) fgls_malloc (y_b * sizeof(double));
+	double *Winv  = (double *) fgls_malloc (n * y_b * sizeof(double));
+	double *XL_copy = (double *) fgls_malloc (n * wXL * y_b * sizeof(double));
+	/*memcpy( XL_copy, cf->XL_orig, wXL * n * sizeof(double) );*/
+
+	/* sigma2.score */
+	double *scoreB_t  = (double *) fgls_malloc (wXL * y_b * sizeof(double));
+	double *scoreV_tl = (double *) fgls_malloc (wXL * wXL * y_b * sizeof(double));
+	double *scoreYmXB = (double *) fgls_malloc (n * y_b * sizeof(double));
+	double *scoreYmXB_tmp = (double *) fgls_malloc ( n * y_b * sizeof(double) );
+	/*double *res_sigma = (double *) fgls_malloc (y_b * sizeof(double));*/
+
+	/* Double buffering */
+	double *Y_cur    = (double *) fgls_malloc (n * y_b * sizeof(double));
+	double *Y_next   = (double *) fgls_malloc (n * y_b * sizeof(double));
+	double *ZtY_cur  = (double *) fgls_malloc (n * y_b * sizeof(double));
+	double *ZtY_next = (double *) fgls_malloc (n * y_b * sizeof(double));
+
+	/* Asynchronous IO data structures */
+	struct aiocb aiocb_Y_cur,   aiocb_Y_next,
+	             aiocb_ZtY_cur, aiocb_ZtY_next;
+
+	const struct aiocb ** aiocb_Y_cur_l,
+	                   ** aiocb_Y_next_l,
+	                   ** aiocb_ZtY_cur_l,
+	                   ** aiocb_ZtY_next_l;
+
+	aiocb_Y_cur_l   = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+	aiocb_Y_next_l  = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+	aiocb_ZtY_cur_l = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+	aiocb_ZtY_next_l  = (const struct aiocb **) fgls_malloc (sizeof(struct aiocb *));
+
+	aiocb_Y_cur_l[0]    = &aiocb_Y_cur;
+	aiocb_Y_next_l[0]   = &aiocb_Y_next;
+	aiocb_ZtY_cur_l[0]  = &aiocb_ZtY_cur;
+	aiocb_ZtY_next_l[0] = &aiocb_ZtY_next;
+
+	/* Read first piece of "Y" */
+	fgls_aio_read( &aiocb_Y_cur,
+	               fileno( cf->fp_Y ), Y_cur,
+	               MIN( (size_t)y_b, (size_t)t) * n * sizeof(double), 0);
+	/* Read first piece of "ZtY" */
+	fgls_aio_read( &aiocb_ZtY_cur,
+	               fileno( cf->fp_ZtY ), ZtY_cur,
+	               MIN( (size_t)y_b, (size_t)t) * n * sizeof(double), 0);
+	int y_inc;
+	for ( j = 0; j < t; j+=y_b )
+	{
+		y_inc = MIN( y_b, t - j );
+		/* Read next piece of Y */
+		struct aiocb *aiocb_Y_next_p = (struct aiocb *)aiocb_Y_next_l[0];
+		fgls_aio_read( aiocb_Y_next_p,
+					   fileno( cf->fp_Y ), Y_next,
+					   j + y_b > t ? 0 : MIN( y_b, t - (size_t)( j + y_b ) ) * n * sizeof(double),
+					   j + y_b > t ? 0 : (off_t)(j + y_b) * n * sizeof(double) );
+		/* Read next piece of ZtY */
+		struct aiocb *aiocb_ZtY_next_p = (struct aiocb *)aiocb_ZtY_next_l[0];
+		fgls_aio_read( aiocb_ZtY_next_p,
+					   fileno( cf->fp_ZtY ), ZtY_next,
+					   j + y_b > t ? 0 : MIN( y_b, t - (size_t)( j + y_b ) ) * n * sizeof(double),
+					   j + y_b > t ? 0 : (off_t)(j + y_b) * n * sizeof(double) );
+
+		/* Wait for current piece of Y */
+		fgls_aio_suspend( aiocb_Y_cur_l, 1, NULL );
+		/* Wait for current piece of Y */
+		fgls_aio_suspend( aiocb_ZtY_cur_l, 1, NULL );
+
+		/* Compute */
+		for (k = 0; k < y_inc; k++)
+		{
+			alpha[k] = cf->sigma2[j + k] * cf->h2[j + k];
+			beta[k]  = cf->sigma2[j + k] * (1 - cf->h2[j + k]);
+		}
+
+		/* Winv := sqrt( inv( alpha W - beta I ) ) */
+		// Best order? sqrt - inv
+		//
+		// Possibly GER
+		for (k = 0; k < y_inc; k++)
+			for (l = 0; l < n; l++)
+				Winv[k*n + l] = sqrt(1.0 / (alpha[k] * cf->W[l] + beta[k]));
+
+		/* y := sqrt(Winv) * Z' * y */
+		for (k = 0; k < y_inc; k++)
+			for (l = 0; l < n; l++)
+				ZtY_cur[k*n+l] *= Winv[k*n+l];
+
+		/* XL := sqrt(Winv) * Z' * XL */
+		for (ll = 0; ll < y_inc; ll++)
+		  for ( k = 0; k < wXL; k++ )
+			  for ( l = 0; l < n; l++ )
+				  XL_copy[ ll * wXL * n + k * n + l ] = cf->ZtXL[ k * n + l ] * Winv[ll * n + l];
+		  
+		/* B_t := XL' * y */
+		for (ll = 0; ll < y_inc; ll++)
+		  dgemv_("T", &n, &wXL, &ONE, &XL_copy[ll * wXL * n], &n, &ZtY_cur[ll * n], &iONE, &ZERO, &scoreB_t[ll * wXL], &iONE);
+
+		/* V_tl := Compute Top-left part of V */
+		for (ll = 0; ll < y_inc; ll++)
+		{
+			dsyrk_("L", "T", // LOWER, NO_TRANS, 
+					&wXL, &n, // n, k
+					&ONE, &XL_copy[ll * wXL * n], &n, // KL KL' 
+					&ZERO, &scoreV_tl[ll * wXL * wXL], &wXL); // V_TL
+		}
+
+		/* Compute sigma2.score's */
+		// bt
+		double *sc_B_t, *sc_V_tl;
+		for ( ll = 0; ll < y_inc; ll++ )
+		{
+			sc_B_t  = &scoreB_t [ ll * wXL ];
+			sc_V_tl = &scoreV_tl[ ll * wXL * wXL ];
+
+			dpotrf_(LOWER, &wXL, sc_V_tl, &wXL, &info);
+			if (info != 0)
+			{
+				char err[STR_BUFFER_SIZE];
+				snprintf(err, STR_BUFFER_SIZE, "sigma2.score: dpotrf(scoreV) failed (info: %d) - j: %d", info, j+ll);
+				error_msg(err, 1);
+			}
+			dtrsv_(LOWER, NO_TRANS, NON_UNIT, &wXL, sc_V_tl, &wXL, sc_B_t, &iONE);
+			dtrsv_(LOWER,    TRANS, NON_UNIT, &wXL, sc_V_tl, &wXL, sc_B_t, &iONE);
+		}
+		// YmXB
+		memcpy( scoreYmXB, Y_cur, n * y_inc * sizeof(double) );
+		dgemm_(NO_TRANS, NO_TRANS,
+				&n, &y_inc, &wXL, 
+				&MINUS_ONE, cf->XL_orig, &n, scoreB_t, &wXL,
+				&ONE, scoreYmXB, &n);
+		// residual sigma
+		dgemm_(TRANS, NO_TRANS,
+				&n, &y_inc, &n, 
+				&ONE, cf->Z, &n, scoreYmXB, &n,
+				&ZERO, scoreYmXB_tmp, &n);
+		for ( ll = 0; ll < y_inc; ll++ )
+		{
+			for ( k = 0; k < n; k++ )
+			{
+				scoreYmXB_tmp[ ll * n + k ] = scoreYmXB_tmp[ ll * n + k ] * Winv[ ll * n + k ];
+			}
+			cf->res_sigma[j + ll] = ddot_(&n, &scoreYmXB_tmp[ ll * n ], &iONE, 
+									  		  &scoreYmXB_tmp[ ll * n ], &iONE) / (n - wXL);
+		}
+
+		/* Swap buffers */
+		swap_aiocb( &aiocb_Y_cur_l,   &aiocb_Y_next_l );
+		swap_aiocb( &aiocb_ZtY_cur_l, &aiocb_ZtY_next_l );
+		swap_buffers( &Y_cur,   &Y_next );
+		swap_buffers( &ZtY_cur, &ZtY_next );
+	}
+
+	/* Wait for the remaining io calls issued */
+	fgls_aio_suspend( aiocb_Y_cur_l, 1, NULL );
+	fgls_aio_suspend( aiocb_ZtY_cur_l, 1, NULL );
+
+	/* Clean-up */
+	free( alpha );
+	free( beta );
+	free( Winv );
+	free( XL_copy );
+
+	free( scoreB_t );
+	free( scoreV_tl );
+	free( scoreYmXB );
+	free( scoreYmXB_tmp );
+
+	free( Y_cur );
+	free( Y_next );
+	free( ZtY_cur );
+	free( ZtY_next );
+
+	free( aiocb_Y_cur_l    );
+	free( aiocb_Y_next_l   );
+	free( aiocb_ZtY_cur_l  );
+	free( aiocb_ZtY_next_l );
+	
+	return;
 }
