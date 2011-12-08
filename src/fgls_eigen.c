@@ -130,10 +130,10 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 	loops_t.sigma = ( double * ) fgls_malloc ( cf.t * sizeof(double) );
 	loops_t.alpha = ( double * ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.y_b * sizeof(double) );
 	loops_t.beta  = ( double * ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.y_b * sizeof(double) );
-	loops_t.Winv  = ( double * ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.x_b * cf.n * sizeof(double) );
+	loops_t.Winv  = ( double * ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.y_b * cf.n * sizeof(double) );
 	// The original in XL[0]
 	// The copy to overwrite in XL[1]
-	loops_t.XL_orig = ( double * ) fgls_malloc ( cf.wXL * cf.n * sizeof(double) );
+	/*loops_t.XL_orig = ( double * ) fgls_malloc ( cf.wXL * cf.n * sizeof(double) );*/
 	loops_t.XL[0] = ( double * ) fgls_malloc ( cf.wXL * cf.n * sizeof(double) );
 	loops_t.XL[1] = ( double * ) fgls_malloc ( cf.NUM_COMPUTE_THREADS * cf.wXL * cf.n * cf.y_b * sizeof(double) );
 	// Reusable B_Top and V_TopLeft
@@ -162,9 +162,9 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 	XL_fp = fopen( cf.ZtXL_path, "rb" );
 	sync_read( loops_t.XL[0], XL_fp, cf.wXL * cf.n, 0 );
 	fclose( XL_fp );
-	XL_fp = fopen( cf.XL_path, "rb" );
-	sync_read( loops_t.XL_orig, XL_fp, cf.wXL * cf.n, 0 );
-	fclose( XL_fp );
+	/*XL_fp = fopen( cf.XL_path, "rb" );*/
+	/*sync_read( loops_t.XL_orig, XL_fp, cf.wXL * cf.n, 0 );*/
+	/*fclose( XL_fp );*/
 
 	/* Files for out-of-core data: XR, Y, B and V */
 	loops_t.XR_fp = fopen( cf.ZtXR_path, "rb");
@@ -213,7 +213,7 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
 		free( loops_t.B[i] );
 		free( loops_t.V[i] );
 	}
-	free( loops_t.XL_orig );
+	/*free( loops_t.XL_orig );*/
 	free( loops_t.XL[0] );
 	free( loops_t.XL[1] );
 	free( loops_t.B_t  );
@@ -356,7 +356,6 @@ void* ooc_loops(void* in)
   struct timeval t0, t1;
   for (jb = id * y_b; jb < t; jb += cf->NUM_COMPUTE_THREADS * y_b) 
   {
-	  /*printf("Iter jb: %d\n", jb);*/
     gettimeofday(&t0, NULL);
 	y_inc = MIN( y_b, t - jb );
 #if VAMPIR
@@ -400,6 +399,8 @@ void* ooc_loops(void* in)
 	 *     Winv = alpha W + beta I */
     for (k = 0; k < y_inc; k++)
 	{
+		/*printf("    h[%d] = %.16e\n", jb+k, h[jb+k]);*/
+		/*printf("sigma[%d] = %.16e\n", jb+k, sigma[jb+k]);*/
     	alpha[k] = sigma[jb + k] * h[jb + k]; // * h[j];
     	beta[k]  = sigma[jb + k] * (1 - h[jb + k]); // * h[j]);
 	}
@@ -409,8 +410,13 @@ void* ooc_loops(void* in)
 	//
 	// Possibly GER
     for (k = 0; k < y_inc; k++)
+	{
+		/*printf("it(y): %d\n", jb+k);*/
         for (l = 0; l < n; l++)
             Winv[k*n + l] = sqrt(1.0 / (alpha[k] * W[l] + beta[k]));
+	}
+	/*for (l = 0; l < n; l++)*/
+	/*printf("%d - %.16e\n", l, Winv[66*n+l]);*/
 
     /* y := sqrt(Winv) * Z' * y */
     for (k = 0; k < y_inc; k++)
@@ -435,57 +441,6 @@ void* ooc_loops(void* in)
 				&ONE, &XL[ll * wXL * n], &n, // KL KL' 
 				&ZERO, &V_tl[ll * wXL * wXL], &wXL); // V_TL
 	}
-
-	/* Compute sigma2.score's */
-	// copy B_t and V_tl
-	/*memcpy( scoreB_t,  B_t,  y_inc * wXL * sizeof(double) );*/
-	/*memcpy( scoreV_tl, V_tl, y_inc * wXL * wXL * sizeof(double) );*/
-	// XB
-	/*double *sc_B_t, *sc_V_tl;*/
-	/*for ( ll = 0; ll < y_inc; ll++ )*/
-	/*{*/
-	/*sc_B_t  = &scoreB_t [ ll * wXL ];*/
-	/*sc_V_tl = &scoreV_tl[ ll * wXL * wXL ];*/
-	/**/
-	/*dpotrf_(LOWER, &wXL, sc_V_tl, &wXL, &info);*/
-	/*if (info != 0)*/
-	/*{*/
-	/*char err[STR_BUFFER_SIZE];*/
-	/*snprintf(err, STR_BUFFER_SIZE, "sigma2.score: dpotrf(scoreV(%d)) failed (info: %d) - i: %d", ll, info, i);*/
-	/*error_msg(err, 1);*/
-	/*}*/
-	/*printf("V_tl[%d] = %.16e\n", ll, sc_V_tl[0]);*/
-	/*dtrsv_(LOWER, NO_TRANS, NON_UNIT, &wXL, sc_V_tl, &wXL, sc_B_t, &iONE);*/
-	/*dtrsv_(LOWER,    TRANS, NON_UNIT, &wXL, sc_V_tl, &wXL, sc_B_t, &iONE);*/
-	/*printf("B_t [%d] = %.16e\n", ll, sc_B_t[0]);*/
-	/*}*/
-	// YmXB
-	/*double *XL_orig = XL[0];*/
-	/*printf("XL[0] = %.16e\n", loops_t->XL_orig[0]);*/
-	/*printf("YmXB[0] = %.16e\n", scoreYmXB[0]);*/
-	/*printf("YmXB[1] = %.16e\n", scoreYmXB[n]);*/
-	/*dgemm_(NO_TRANS, NO_TRANS,*/
-	/*&n, &y_inc, &wXL, */
-	/*&MINUS_ONE, loops_t->XL_orig, &n, scoreB_t, &wXL,*/
-	/*&ONE, scoreYmXB, &n);*/
-	/*printf("YmXB[0] = %.16e\n", scoreYmXB[0]);*/
-	/*printf("YmXB[1] = %.16e\n", scoreYmXB[n]);*/
-	// residual sigma
-	/*double *scoreYmXB_tmp = (double *) fgls_malloc ( n * y_inc * sizeof(double) );*/
-	/*dgemm_(TRANS, NO_TRANS,*/
-	/*&n, &y_inc, &n, */
-	/*&ONE, loops_t->Z, &n, scoreYmXB, &n,*/
-	/*&ZERO, scoreYmXB_tmp, &n);*/
-	/*for ( ll = 0; ll < y_inc; ll++ )*/
-	/*{*/
-	/*for ( k = 0; k < n; k++ )*/
-	/*{*/
-	/*scoreYmXB_tmp[ ll * n + k ] = scoreYmXB_tmp[ ll * n + k ] * Winv[ ll * n + k ];*/
-	/*}*/
-	/*res_sigma[ll] = ddot_(&n, &scoreYmXB[ ll * n ], &iONE, */
-	/*&scoreYmXB[ ll * n ], &iONE) / (n - wXL);*/
-	/*printf("sigma[%d] = %.16e\n", ll, res_sigma[ll]);*/
-	/*}*/
 
 #if VAMPIR
     VT_USER_END("COMP_LOOP_Y_CODE");
@@ -522,7 +477,7 @@ void* ooc_loops(void* in)
       x_inc = MIN(x_b, m - ib);
 	  for ( j = 0; j < y_inc; j++ )
 	  {
-		  /*printf("Iter j: %d\n", j);*/
+		  /*printf("Iter j: %d\n", jb+j);*/
 		  /* XR := sqrt(Winv) * Z' * XR */
 		  for ( k = 0; k < x_inc*wXR; k++ )
 			  for ( l = 0; l < n; l++ )
@@ -533,6 +488,7 @@ void* ooc_loops(void* in)
 		  
 		  for (i = 0; i < x_inc; i++)
 		  {
+			  /*printf("Iter i: %d\n", ib+i);*/
 			  Bij = &b_cur[ j*p*x_inc   + i*p];
 			  Vij = &v_cur[ j*p*p*x_inc + i*p*p];
 
@@ -560,6 +516,13 @@ void* ooc_loops(void* in)
 						&ONE, &x_copy[i * wXR * n], &n, 
 						&ZERO, &Vij[wXL * p + wXL], &p);
 
+				/*int ii, jj;*/
+				/*for ( ii = 0; ii < p; ii++ )*/
+				/*{*/
+				/*for ( jj = 0; jj <= ii; jj++ )*/
+				/*printf("%.16e ", Vij[jj*p+ii]);*/
+				/*printf("\n");*/
+				/*}*/
 				/* B := inv(V) * y */
 				dpotrf_(LOWER, &p, Vij, &p, &info);
 				if (info != 0)
@@ -973,6 +936,12 @@ void* ooc_gemm( void *in )
 					   fileno( gemm_t->fp_in ), in_next,
 					   i + n_cols_per_buff > n ? 0 : MIN( max_elems, ( n - (size_t)( i + n_cols_per_buff ) ) * k ) * sizeof(double),
 					   i + n_cols_per_buff > n ? 0 : (off_t)(i + n_cols_per_buff) * k * sizeof(double) );
+		/*if ( i == 0 )*/
+		/*{*/
+		/*int ii;*/
+		/*for ( ii = 0; ii < n; ii++ )*/
+		/*printf("%f\n", in_cur[66*n+ii]);*/
+		/*}*/
 
 		/* Wait for current piece of "in" */
 		fgls_aio_suspend( aiocb_in_cur_l, 1, NULL );

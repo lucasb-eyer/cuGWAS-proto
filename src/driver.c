@@ -52,15 +52,17 @@ int main( int argc, char *argv[] )
   {
 	  sprintf(cf.XL_path,   "%s/XL.in", dir);
 	  sprintf(cf.XR_path,   "%s/XR.in", dir);
-	  sprintf(cf.ZtXL_path, "%s/XL.tmp", dir);
-	  sprintf(cf.ZtXR_path, "%s/XR.tmp", dir);
+	  /*sprintf(cf.ZtXL_path, "%s/XL.tmp", dir);*/
+	  /*sprintf(cf.ZtXR_path, "%s/XR.tmp", dir);*/
 	  sprintf(cf.Y_path,    "%s/Y.in", dir);
 	  sprintf(cf.ZtY_path,  "%s/Y.tmp", dir);
 	  sprintf(cf.Phi_path,  "%s/Phi.in", dir);
 	  sprintf(cf.h_path,    "%s/H.in", dir);
 	  sprintf(cf.sigma_path,"%s/Sig.in", dir);
-	  sprintf(cf.B_path,    "%s/B.out", dir);
-	  sprintf(cf.V_path,    "%s/V.out", dir);
+	  /*sprintf(cf.B_path,    "%s/B.out", dir);*/
+	  /*sprintf(cf.V_path,    "%s/V.out", dir);*/
+	  sprintf(cf.B_path,    "/dev/null");
+	  sprintf(cf.V_path,    "/dev/null");
 
 	  if ( var == 'e' )
 		  fgls_eigen( 
