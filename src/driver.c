@@ -59,10 +59,10 @@ int main( int argc, char *argv[] )
 	  sprintf(cf.Phi_path,  "%s/Phi.in", dir);
 	  sprintf(cf.h_path,    "%s/H.in", dir);
 	  sprintf(cf.sigma_path,"%s/Sig.in", dir);
-	  /*sprintf(cf.B_path,    "%s/B.out", dir);*/
-	  /*sprintf(cf.V_path,    "%s/V.out", dir);*/
-	  sprintf(cf.B_path,    "/dev/null");
-	  sprintf(cf.V_path,    "/dev/null");
+	  sprintf(cf.B_path,    "%s/B.out", dir);
+	  sprintf(cf.V_path,    "%s/V.out", dir);
+	  /*sprintf(cf.B_path,    "/dev/null");*/
+	  /*sprintf(cf.V_path,    "/dev/null");*/
 
 	  if ( var == 'e' )
 		  fgls_eigen( 
@@ -87,11 +87,16 @@ int main( int argc, char *argv[] )
   printf("%ld\n", total);
 
 #if DEBUG
+  printf("Checking B\n");
+  /*sleep(3);*/
+
   char str_buf[STR_BUFFER_SIZE];
   double *b_mine, *b_exp;
   FILE *b_mine_f, *b_exp_f;
-  b_mine = (double*)malloc(cf.m*cf.t*cf.p*sizeof(double));
-  b_exp = (double*)malloc(cf.m*cf.t*cf.p*sizeof(double));
+  double max;
+
+  b_mine = (double*) malloc (cf.m * cf.t * cf.p * sizeof(double));
+  b_exp  = (double*) malloc (cf.m * cf.t * cf.p * sizeof(double));
 
   sprintf(str_buf, "%s/B.out", dir);
   b_mine_f = fopen(str_buf, "rb");
@@ -106,21 +111,41 @@ int main( int argc, char *argv[] )
     printf("ERROR opening %s\n", str_buf);
     return -1;
   }
-  double max;
-  sync_read(b_mine, b_mine_f, cf.p*cf.m*cf.t, 0);
-  sync_read(b_exp,  b_exp_f,  cf.p*cf.m*cf.t, 0);
-  /*printf("out[0]: %12e\n", b_mine[0]);*/
-  /*printf("exp[0]: %12e\n", b_exp[0]);*/
-  /*printf("out[1]: %12e\n", b_mine[1]);*/
-  /*printf("exp[1]: %12e\n", b_exp[1]);*/
-  /*printf("out[3000]: %12e\n", b_mine[3000]);*/
-  /*printf("exp[3000]: %12e\n", b_exp[3000]);*/
-  /*printf("out[6000]: %12e\n", b_mine[6000]);*/
-  /*printf("exp[6000]: %12e\n", b_exp[6000]);*/
-  /*printf("out[9000]: %12e\n", b_mine[9000]);*/
-  /*printf("exp[9000]: %12e\n", b_exp[9000]);*/
+
+  sync_read(b_mine, b_mine_f, cf.p * cf.m * cf.t, 0);
+  sync_read(b_exp,  b_exp_f,  cf.p * cf.m * cf.t, 0);
   max = compare(b_mine, b_exp, cf.m*cf.p*cf.t);
-  printf("Max elemental diff: %lf\n", max);
+  printf("Max elemental diff: %.16e\n", max);
+
+  free( b_mine );
+  free( b_exp  );
+
+  printf("Checking V\n");
+  b_mine = (double *) malloc (cf.m * cf.t * cf.p * cf.p * sizeof(double));
+  b_exp  = (double *) malloc (cf.m * cf.t * cf.p * cf.p * sizeof(double));
+
+  sprintf(str_buf, "%s/V.out", dir);
+  b_mine_f = fopen(str_buf, "rb");
+  if(!b_mine_f) {
+    printf("ERROR opening %s\n", str_buf);
+    return -1;
+  }
+
+  sprintf(str_buf, "%s/V_exp.out", dir);
+  b_exp_f = fopen(str_buf, "rb");
+  if(!b_exp_f) {
+    printf("ERROR opening %s\n", str_buf);
+    return -1;
+  }
+  sync_read(b_mine, b_mine_f, cf.p * cf.p * cf.m * cf.t, 0);
+  sync_read(b_exp,  b_exp_f,  cf.p * cf.p * cf.m * cf.t, 0);
+  max = compare(b_mine, b_exp, cf.m * cf.p * cf.p * cf.t);
+  printf("Max elemental diff: %.16e\n", max);
+
+  free( b_mine );
+  free( b_exp  );
+
+  printf("Done checking\n");
 #endif // DEBUG
 
   return 0;
@@ -130,8 +155,12 @@ double compare(double* a, double* b, int size) {
   double out = 0.0;
   int i;
   for (i = 0; i < size; i++) {
-    if((i % 1000) == 0 && fabs(a[i] - b[i]) > 1e-13)
+	  /*if((i % 1000) == 0 && fabs(a[i] - b[i]) > 1e-13)*/
+    if( fabs(a[i] - b[i] ) > 1e-13)
+	{
 		printf("Difference at %d: %e [%f - %f]\n", i, fabs(a[i] - b[i]), a[i], b[i]);
+		return -1;
+	}
     if(out < fabs(a[i] - b[i]))
       out = fabs(a[i] - b[i]);
   }

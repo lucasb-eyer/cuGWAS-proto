@@ -126,6 +126,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 		Y[i] = ( double * ) fgls_malloc ( cf.n * sizeof(double) );
 		B[i] = ( double * ) fgls_malloc ( cf.x_b * cf.p * sizeof(double) );
 		V[i] = ( double * ) fgls_malloc ( cf.x_b * cf.p * cf.p * sizeof(double) );
+		/*V[i] = ( double * ) calloc ( cf.x_b * cf.p * cf.p, sizeof(double) );*/
 	}
 
 	/* Load in-core data */
@@ -254,8 +255,13 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 		for ( i = 0; i < n; i++ )
 			M[i*n + i] = M[i*n + i] + beta;
 
+
 		/* L * L' = M */
+		/*struct timeval t0, t1;*/
+		/*gettimeofday(&t0, NULL);*/
 		dpotrf_(LOWER, &n, M, &n, &info);
+		/*gettimeofday(&t1, NULL);*/
+		/*printf("Chol:  %ld msecs\n", get_diff_ms( &t0, &t1 ));*/
 		if (info != 0)
 		{
 			char err[STR_BUFFER_SIZE];
@@ -290,7 +296,6 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 #if VAMPIR
       VT_USER_END("COMP_J");
 #endif
-
 		/* Compute sigma2.score */
 		// copy B_t and V_tl
 		for( k = 0; k < wXL; k++ )
