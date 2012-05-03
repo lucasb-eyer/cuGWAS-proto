@@ -77,8 +77,8 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 	int info;
 
 	/* iterators and auxiliar vars */
-	int ib, i, j, k;
-	int nn = n * n;
+	int ib, i, j, k; // size_t
+	int nn = n * n; // size_t
 	char numths_str[STR_BUFFER_SIZE];
 
 #if DEBUG
@@ -104,8 +104,8 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 
 	/* Memory allocation */
 	// In-core
-	Phi = ( double * ) fgls_malloc ( cf.n * cf.n * sizeof(double) );
-	M   = ( double * ) fgls_malloc ( cf.n * cf.n * sizeof(double) );
+	Phi = ( double * ) fgls_malloc ( (size_t)cf.n * cf.n * sizeof(double) );
+	M   = ( double * ) fgls_malloc ( (size_t)cf.n * cf.n * sizeof(double) );
 	h     = ( double * ) fgls_malloc ( cf.t * sizeof(double) );
 	sigma = ( double * ) fgls_malloc ( cf.t * sizeof(double) );
 
@@ -122,10 +122,11 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 	// Out-of-core 
 	for (i = 0; i < NUM_BUFFERS_PER_THREAD; i++) 
 	{
-		X[i] = ( double * ) fgls_malloc ( cf.x_b * cf.p * cf.n * sizeof(double) );
-		Y[i] = ( double * ) fgls_malloc ( cf.n * sizeof(double) );
-		B[i] = ( double * ) fgls_malloc ( cf.x_b * cf.p * sizeof(double) );
-		V[i] = ( double * ) fgls_malloc ( cf.x_b * cf.p * cf.p * sizeof(double) );
+		X[i] = ( double * ) fgls_malloc ( (size_t) cf.x_b * cf.wXR * cf.n * sizeof(double) );
+		/*X[i] = ( double * ) fgls_malloc ( (size_t) cf.x_b * cf.p * cf.n * sizeof(double) );*/
+		Y[i] = ( double * ) fgls_malloc ( (size_t) cf.n * sizeof(double) );
+		B[i] = ( double * ) fgls_malloc ( (size_t) cf.x_b * cf.p * sizeof(double) );
+		V[i] = ( double * ) fgls_malloc ( (size_t) cf.x_b * cf.p * cf.p * sizeof(double) );
 		/*V[i] = ( double * ) calloc ( cf.x_b * cf.p * cf.p, sizeof(double) );*/
 	}
 
@@ -248,7 +249,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
       VT_USER_START("COMP_J");
 #endif
 		/* M := sigma * ( h^2 Phi - (1 - h^2) I ) */
-		memcpy( M, Phi, n * n * sizeof(double) );
+		memcpy( M, Phi, (size_t)n * n * sizeof(double) );
 		alpha = h[j] * sigma[j];
 		beta  = (1 - h[j]) * sigma[j];
 		dscal_(&nn, &alpha, M, &iONE);
@@ -277,6 +278,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
       VT_USER_START("WAIT_Y");
 #endif
 		/* Wait until current Y is available */
+	  /*printf("Waiting for %lu bytes read (Y)\n", aiocb_y_cur.aio_nbytes);*/
 		fgls_aio_suspend( aiocb_y_cur_l, 1, NULL );
 #if VAMPIR
       VT_USER_END("WAIT_Y");
@@ -341,6 +343,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
       VT_USER_START("WAIT_X");
 #endif
 			/* Wait until current block of XR's is available */
+	  /*printf("Waiting for %lu bytes read (X)\n", aiocb_x_cur.aio_nbytes);*/
 			fgls_aio_suspend( aiocb_x_cur_l, 1, NULL );
 #if VAMPIR
       VT_USER_END("WAIT_X");
@@ -443,7 +446,9 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 			/* Wait until the previous blocks of B's and V's are written */
 			if ( iter > 0)
 			{
+				/*printf("Waiting for %lu bytes written (b)\n", aiocb_b_prev.aio_nbytes);*/
 				fgls_aio_suspend( aiocb_b_prev_l, 1, NULL );
+				/*printf("Waiting for %lu bytes written (v)\n", aiocb_v_prev.aio_nbytes);*/
 				fgls_aio_suspend( aiocb_v_prev_l, 1, NULL );
 			}
 #if VAMPIR
@@ -488,6 +493,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
       VT_USER_START("WAIT_ALL");
 #endif
 	/* Wait for the remaining IO operations issued */
+	  /*printf("Last Waiting");*/
 	fgls_aio_suspend( aiocb_x_cur_l, 1, NULL );
 	fgls_aio_suspend( aiocb_y_cur_l, 1, NULL );
 	fgls_aio_suspend( aiocb_b_prev_l, 1, NULL );
