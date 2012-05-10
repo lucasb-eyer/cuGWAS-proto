@@ -15,13 +15,14 @@ void error_msg(char *msg, int abort)
 		exit(EXIT_FAILURE);
 }
 
-void * fgls_malloc( size_t size )
+void * fgls_malloc_impl( const char* file, long line, size_t size )
 {
 	void *buf;
 	
-	if ( (buf = malloc( size )) == NULL )
-		error_msg("Couldn't allocate memory\n", 1);
-	/*error_msg(__FILE__, __LINE__, "Couldn't allocate memory\n", 1);*/
+	if ( (buf = malloc( size )) == NULL ) {
+		fprintf(stderr, "Couldn't allocate %ld bytes of memory in %s:%ld\n", size, file, line);
+		exit(EXIT_FAILURE);
+	}
 
 	return buf;
 }

@@ -52,7 +52,8 @@ void swap_aiocb(const struct aiocb ***x, const struct aiocb ***y);
 int read_clock(struct timeval *t);
 int elapsed_time(struct timeval *start, struct timeval *end);
 
-void * fgls_malloc( size_t size );
+#define fgls_malloc(size) fgls_malloc_impl(__FILE__, __LINE__, size)
+void * fgls_malloc_impl( const char* file, long line, size_t size );
 void error_msg(char *msg, int abort);
 
 #endif // FGLS_COMMON_H
