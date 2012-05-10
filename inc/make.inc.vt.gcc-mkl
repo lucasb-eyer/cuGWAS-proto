@@ -1,0 +1,7 @@
+include inc/make.inc.vt.common
+
+CFLAGS += -vt:cc gcc $(FLAGS_MATH_INCLUDE)
+
+#LDFLAGS = -L$(MKLROOT)/lib/intel64/ -L$(INTELROOT)/compiler/lib/intel64
+#LDLIBS = -lrwthmkl -liomp5 -lifcoremt
+LDFLAGS = $(FLAGS_MATH_LINKER)

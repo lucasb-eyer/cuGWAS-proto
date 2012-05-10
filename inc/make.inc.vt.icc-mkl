@@ -1,0 +1,9 @@
+include inc/make.inc.vt.common
+
+CFLAGS += -vt:cc icc -DVAMPIR
+
+#LDFLAGS = -L$(MKLROOT)/lib/intel64/ -L$(INTELROOT)/compiler/lib/intel64
+#LDLIBS = -lrwthmkl -liomp5 -lifcoremt
+LDFLAGS = $(FLAGS_MKL_LINKER) $(FLAGS_INTEL_LINKER)
+LDLIBS = -liomp5 -lifcoremt
+

@@ -20,7 +20,7 @@
 #include "timing.h"
 #include "fgls_eigen.h"
 
-#if VAMPIR
+#ifdef VAMPIR
   #include "vt_user.h"
 #endif
 
@@ -399,11 +399,11 @@ void* ooc_loops(void* in)
                    jb + cf->NUM_COMPUTE_THREADS * y_b >= t ? 0 : (size_t)n * MIN(y_b, t - (jb + cf->NUM_COMPUTE_THREADS * y_b)) * sizeof(double),
                    jb + cf->NUM_COMPUTE_THREADS * y_b >= t ? 0 : (off_t)(jb + y_b * cf->NUM_COMPUTE_THREADS) * n * sizeof(double) );
 
-#if VAMPIR
+#ifdef VAMPIR
       VT_USER_END("READ_Y");
 #endif
 
-#if VAMPIR
+#ifdef VAMPIR
       VT_USER_START("WAIT_X");
 #endif
     /* Copy XL */
@@ -412,7 +412,7 @@ void* ooc_loops(void* in)
 #if VAMPIR
       VT_USER_END("WAIT_X");
 #endif
-#if VAMPIR
+#ifdef VAMPIR
     VT_USER_START("WAIT_Y");
 #endif
     /* Wait until the current Y is available */
@@ -420,7 +420,7 @@ void* ooc_loops(void* in)
 #if VAMPIR
     VT_USER_END("WAIT_Y");
 #endif
-#if VAMPIR
+#ifdef VAMPIR
     VT_USER_START("COMP_LOOP_Y_CODE");
 #endif
     /* Set the scalars alpha and beta to compute: 
@@ -465,7 +465,7 @@ void* ooc_loops(void* in)
                 &ZERO, &V_tl[ll * wXL * wXL], &wXL); // V_TL
     }
 
-#if VAMPIR
+#ifdef VAMPIR
     VT_USER_END("COMP_LOOP_Y_CODE");
 #endif
     for (ib = 0; ib < m; ib += x_b) 
@@ -495,7 +495,7 @@ void* ooc_loops(void* in)
 #if VAMPIR
         VT_USER_END("WAIT_X");
 #endif
-#if VAMPIR
+#ifdef VAMPIR
       VT_USER_START("COMP_LOOP_X_CODE");
 #endif
       for ( j = 0; j < y_inc; j++ )
@@ -586,7 +586,7 @@ void* ooc_loops(void* in)
       VT_USER_END("WAIT_B");
 #endif
 
-#if VAMPIR
+#ifdef VAMPIR
       VT_USER_START("WRITE_B");
 #endif
       /* Write current B and V */
@@ -630,17 +630,17 @@ void* ooc_loops(void* in)
       VT_USER_START("WAIT_X");
 #endif
   fgls_aio_suspend( aiocb_x_cur_l, 1, NULL );
-#if VAMPIR
+#ifdef VAMPIR
       VT_USER_END("WAIT_X");
 #endif
-#if VAMPIR
+#ifdef VAMPIR
       VT_USER_START("WAIT_Y");
 #endif
   fgls_aio_suspend( aiocb_y_cur_l, 1, NULL );
-#if VAMPIR
+#ifdef VAMPIR
       VT_USER_END("WAIT_Y");
 #endif
-#if VAMPIR
+#ifdef VAMPIR
       VT_USER_START("WAIT_B");
 #endif
   for ( i = 0; i < y_inc; i++ )
@@ -648,7 +648,7 @@ void* ooc_loops(void* in)
     fgls_aio_suspend( &aiocb_b_prev_l[i], 1, NULL );
     fgls_aio_suspend( &aiocb_v_prev_l[i], 1, NULL );
   }
-#if VAMPIR
+#ifdef VAMPIR
       VT_USER_END("WAIT_B");
 #endif
 

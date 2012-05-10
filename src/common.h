@@ -2,8 +2,6 @@
 #define FGLS_COMMON_H
 
 #define DEBUG 1
-#define TIMING 0
-#define VAMPIR 0
 
 #define MIN(x,y) ( (x) < (y) ? (x) : (y) )
 #define STR_BUFFER_SIZE 256
