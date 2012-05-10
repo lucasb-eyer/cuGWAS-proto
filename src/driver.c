@@ -86,7 +86,7 @@ int main( int argc, char *argv[] )
   long total = get_diff_ms(&start, &end) / nrep; // float?
   printf("%ld\n", total);
 
-#if DEBUG
+#ifdef DEBUG
   printf("Checking B\n");
   /*sleep(3);*/
 
@@ -152,18 +152,19 @@ int main( int argc, char *argv[] )
 }
 
 double compare(double* a, double* b, int size) {
-  double out = 0.0;
+  double maxerr = 0.0, relerr = 0.0;
   int i;
   for (i = 0; i < size; i++) {
-      /*if((i % 1000) == 0 && fabs(a[i] - b[i]) > 1e-13)*/
-    if( fabs(a[i] - b[i] ) > 1e-13)
+    /*if((i % 1000) == 0 && fabs(a[i] - b[i]) > 1e-13)*/
+    relerr = fabs((a[i]-b[i])/b[i]);
+    if(relerr > 1e-15)
     {
-        printf("Difference at %d: %e [%f - %f]\n", i, fabs(a[i] - b[i]), a[i], b[i]);
+        printf("Difference at %d: %e [(%f - %f)/%f]\n", i, relerr, a[i], b[i], b[i]);
         return -1;
     }
-    if(out < fabs(a[i] - b[i]))
-      out = fabs(a[i] - b[i]);
+    if(relerr > maxerr)
+      maxerr = relerr;
   }
-  return out;
+  return maxerr;
 }
 
