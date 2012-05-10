@@ -25,94 +25,94 @@ extern int    idamax_( int *n,                double *x, int *incx              
  */
 
 extern void dgemv_( char *trans, 
-					int *m, int *n, 
-					double *alpha, double *A, int *ldA, double *x, int *incx, 
-					double *beta,                       double *y, int *incy );
+                    int *m, int *n, 
+                    double *alpha, double *A, int *ldA, double *x, int *incx, 
+                    double *beta,                       double *y, int *incy );
 extern void dgbmv_( char *trans,
-					int *m, int *n, int *kl, int *ku, 
-					double *alpha, double *A, int *ldA, double *x, int *incx, 
-					double *beta,                       double *y, int *incy );
+                    int *m, int *n, int *kl, int *ku, 
+                    double *alpha, double *A, int *ldA, double *x, int *incx, 
+                    double *beta,                       double *y, int *incy );
 extern void dsymv_( char *uplo,
-					int *n,
-					double *alpha, double *A, int *ldA, double *x, int *incx, 
-					double *beta,                       double *y, int *incy );
+                    int *n,
+                    double *alpha, double *A, int *ldA, double *x, int *incx, 
+                    double *beta,                       double *y, int *incy );
 extern void dsbmv_( char *uplo,
-					int *n, int *k,
-					double *alpha, double *A, int *ldA, double *x, int *incx, 
-					double *beta,                       double *y, int *incy );
+                    int *n, int *k,
+                    double *alpha, double *A, int *ldA, double *x, int *incx, 
+                    double *beta,                       double *y, int *incy );
 extern void dhpmv_( char *uplo,
-					int *n,
-					double *alpha, double *AP, double *x, int *incx,
-					double *beta,              double *y, int *incy );
+                    int *n,
+                    double *alpha, double *AP, double *x, int *incx,
+                    double *beta,              double *y, int *incy );
 extern void dtrmv_( char *uplo, char *trans, char *diag,
-					int *n,
-					double *A, int *ldA, double *x, int *incx );
+                    int *n,
+                    double *A, int *ldA, double *x, int *incx );
 extern void dtbmv_( char *uplo, char *trans, char *diag,
-					int *n, int *k,
-					double *A, int *ldA, double *x, int *incx );
+                    int *n, int *k,
+                    double *A, int *ldA, double *x, int *incx );
 extern void dtpmv_( char *uplo, char *trans, char *diag,
-					int *n,
-					double *AP, double *x, int *incx );
+                    int *n,
+                    double *AP, double *x, int *incx );
 extern void dtrsv_( char *uplo, char *trans, char *diag,
-					int *n,
-					double *A, int *ldA, double *x, int *incx );
+                    int *n,
+                    double *A, int *ldA, double *x, int *incx );
 extern void dtbsv_( char *uplo, char *trans, char *diag,
-					int *n, int *k,
-					double *A, int *ldA, double *x, int *incx );
+                    int *n, int *k,
+                    double *A, int *ldA, double *x, int *incx );
 extern void dtpsv_( char *uplo, char *trans, char *diag,
-					int *n,
-					double *AP, double *x, int *incx );
+                    int *n,
+                    double *AP, double *x, int *incx );
 
 extern void dger_ ( int *m, int *n,
-					double *alpha, double *x, int *incx, 
-								   double *y, int *incy, 
-					double *A, int *ldA );
+                    double *alpha, double *x, int *incx, 
+                                   double *y, int *incy, 
+                    double *A, int *ldA );
 extern void dsyr_ ( char *uplo,
-					int *n, 
-					double *alpha, double *x, int *incx,
-					double *A, int *ldA );
+                    int *n, 
+                    double *alpha, double *x, int *incx,
+                    double *A, int *ldA );
 extern void dspr_ ( char *uplo,
-					int *n, 
-					double *alpha, double *x, int *incx,
-					double *AP );
+                    int *n, 
+                    double *alpha, double *x, int *incx,
+                    double *AP );
 extern void dsyr2_( char *uplo,
-					int *n, 
-					double *alpha, double *x, int *incx,
-								   double *y, int *incy,
-					double *A, int *ldA );
+                    int *n, 
+                    double *alpha, double *x, int *incx,
+                                   double *y, int *incy,
+                    double *A, int *ldA );
 extern void dspr2_( char *uplo,
-					int *n, 
-					double *alpha, double *x, int *incx,
-								   double *y, int *incy,
-					double *AP );
+                    int *n, 
+                    double *alpha, double *x, int *incx,
+                                   double *y, int *incy,
+                    double *AP );
 
 /*
  * BLAS 3
  */
 
 extern void dgemm_( char *transA, char *transB, 
-		            int *m, int *n, int *k, 
-					double *alpha, double *A, int *ldA, double *B, int *ldB, 
-					double *beta,  double *C, int *ldC );
+                    int *m, int *n, int *k, 
+                    double *alpha, double *A, int *ldA, double *B, int *ldB, 
+                    double *beta,  double *C, int *ldC );
 extern void dsymm_( char *side, char *uplo, 
-		            int *m, int *n, 
-					double *alpha, double *A, int *ldA, double *B, int *ldB, 
-					double *beta,  double *C, int *ldC );
+                    int *m, int *n, 
+                    double *alpha, double *A, int *ldA, double *B, int *ldB, 
+                    double *beta,  double *C, int *ldC );
 extern void dsyrk_( char *uplo, char *trans, 
-		            int *n, int *k, 
-					double *alpha, double *A, int *ldA,
-					double *beta,  double *C, int *ldC );
+                    int *n, int *k, 
+                    double *alpha, double *A, int *ldA,
+                    double *beta,  double *C, int *ldC );
 extern void dsyr2k_( char *uplo, char *trans, 
-		             int *n, int *k, 
-					 double *alpha, double *A, int *ldA, double *B, int *ldB, 
-					 double *beta,  double *C, int *ldC );
+                     int *n, int *k, 
+                     double *alpha, double *A, int *ldA, double *B, int *ldB, 
+                     double *beta,  double *C, int *ldC );
 extern void dtrmm_(char *side, char *uplo, char *transA, char *diag, 
-				   int *m, int *n, 
-				   double *alpha, double *A, int *ldA, 
-				   double *B, int *ldB);
+                   int *m, int *n, 
+                   double *alpha, double *A, int *ldA, 
+                   double *B, int *ldB);
 extern void dtrsm_(char *side, char *uplo, char *transA, char *diag, 
-				   int *m, int *n, 
-				   double *alpha, double *A, int *ldA, 
-				   double *B, int *ldB);
+                   int *m, int *n, 
+                   double *alpha, double *A, int *ldA, 
+                   double *B, int *ldB);
 
 #endif // __BLAS_H

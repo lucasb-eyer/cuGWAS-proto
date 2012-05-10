@@ -38,12 +38,12 @@ typedef struct
 } FGLS_config_t;
 
 void initialize_config(
-		FGLS_config_t *cf,
-		int n, int p, int m, int t, int wXL, int wXR,
+        FGLS_config_t *cf,
+        int n, int p, int m, int t, int wXL, int wXR,
         int x_b, int y_b, int num_threads,
-		char *Phi_path, char *h2_path, char *sigma2_path,
-		char *XL_path, char *XR_path, char *Y_path,
-		char *B_path, char *V_path
+        char *Phi_path, char *h2_path, char *sigma2_path,
+        char *XL_path, char *XR_path, char *Y_path,
+        char *B_path, char *V_path
 );
 
 void swap_buffers(double **b1, double **b2);

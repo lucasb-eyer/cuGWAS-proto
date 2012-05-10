@@ -19,8 +19,8 @@ int main( int argc, char *argv[] )
   if (argc != 4) 
   {
     fprintf(stderr, "Usage: %s <variant - [e|m]> <data_set_directory> <#repetitions>\n", argv[0]);
-	fprintf(stderr, "\tnote: data_set_directory must contain files:\n");
-	fprintf(stderr, "- Phi.in\n- H.in\n- Sig.in\n- XL.in\n- XR.in\n- Y.in\n");
+    fprintf(stderr, "\tnote: data_set_directory must contain files:\n");
+    fprintf(stderr, "- Phi.in\n- H.in\n- Sig.in\n- XL.in\n- XR.in\n- Y.in\n");
     exit(EXIT_FAILURE);
   }
 
@@ -50,36 +50,36 @@ int main( int argc, char *argv[] )
 
   for ( i = 0; i < nrep; i++ )
   {
-	  sprintf(cf.XL_path,   "%s/XL.in", dir);
-	  sprintf(cf.XR_path,   "%s/XR.in", dir);
-	  /*sprintf(cf.ZtXL_path, "%s/XL.tmp", dir);*/
-	  /*sprintf(cf.ZtXR_path, "%s/XR.tmp", dir);*/
-	  sprintf(cf.Y_path,    "%s/Y.in", dir);
-	  sprintf(cf.ZtY_path,  "%s/Y.tmp", dir);
-	  sprintf(cf.Phi_path,  "%s/Phi.in", dir);
-	  sprintf(cf.h_path,    "%s/H.in", dir);
-	  sprintf(cf.sigma_path,"%s/Sig.in", dir);
-	  sprintf(cf.B_path,    "%s/B.out", dir);
-	  sprintf(cf.V_path,    "%s/V.out", dir);
-	  /*sprintf(cf.B_path,    "/dev/null");*/
-	  /*sprintf(cf.V_path,    "/dev/null");*/
+      sprintf(cf.XL_path,   "%s/XL.in", dir);
+      sprintf(cf.XR_path,   "%s/XR.in", dir);
+      /*sprintf(cf.ZtXL_path, "%s/XL.tmp", dir);*/
+      /*sprintf(cf.ZtXR_path, "%s/XR.tmp", dir);*/
+      sprintf(cf.Y_path,    "%s/Y.in", dir);
+      sprintf(cf.ZtY_path,  "%s/Y.tmp", dir);
+      sprintf(cf.Phi_path,  "%s/Phi.in", dir);
+      sprintf(cf.h_path,    "%s/H.in", dir);
+      sprintf(cf.sigma_path,"%s/Sig.in", dir);
+      sprintf(cf.B_path,    "%s/B.out", dir);
+      sprintf(cf.V_path,    "%s/V.out", dir);
+      /*sprintf(cf.B_path,    "/dev/null");*/
+      /*sprintf(cf.V_path,    "/dev/null");*/
 
-	  if ( var == 'e' )
-		  fgls_eigen( 
-				  cf.n, cf.p, cf.m, cf.t, cf.wXL, cf.wXR,
-				  cf.x_b, cf.y_b, cf.NUM_COMPUTE_THREADS,
-				  cf.Phi_path, cf.h_path, cf.sigma_path, 
-				  cf.XL_path, cf.XR_path, cf.Y_path, 
-				  cf.B_path, cf.V_path
-		  );
-	  else
-		  fgls_chol( 
-				  cf.n, cf.p, cf.m, cf.t, cf.wXL, cf.wXR,
-				  cf.x_b, cf.y_b, cf.NUM_COMPUTE_THREADS,
-				  cf.Phi_path, cf.h_path, cf.sigma_path, 
-				  cf.XL_path, cf.XR_path, cf.Y_path, 
-				  cf.B_path, cf.V_path
-		  );
+      if ( var == 'e' )
+          fgls_eigen( 
+                  cf.n, cf.p, cf.m, cf.t, cf.wXL, cf.wXR,
+                  cf.x_b, cf.y_b, cf.NUM_COMPUTE_THREADS,
+                  cf.Phi_path, cf.h_path, cf.sigma_path, 
+                  cf.XL_path, cf.XR_path, cf.Y_path, 
+                  cf.B_path, cf.V_path
+          );
+      else
+          fgls_chol( 
+                  cf.n, cf.p, cf.m, cf.t, cf.wXL, cf.wXR,
+                  cf.x_b, cf.y_b, cf.NUM_COMPUTE_THREADS,
+                  cf.Phi_path, cf.h_path, cf.sigma_path, 
+                  cf.XL_path, cf.XR_path, cf.Y_path, 
+                  cf.B_path, cf.V_path
+          );
   }
 
   gettimeofday(&end, NULL);
@@ -155,12 +155,12 @@ double compare(double* a, double* b, int size) {
   double out = 0.0;
   int i;
   for (i = 0; i < size; i++) {
-	  /*if((i % 1000) == 0 && fabs(a[i] - b[i]) > 1e-13)*/
+      /*if((i % 1000) == 0 && fabs(a[i] - b[i]) > 1e-13)*/
     if( fabs(a[i] - b[i] ) > 1e-13)
-	{
-		printf("Difference at %d: %e [%f - %f]\n", i, fabs(a[i] - b[i]), a[i], b[i]);
-		return -1;
-	}
+    {
+        printf("Difference at %d: %e [%f - %f]\n", i, fabs(a[i] - b[i]), a[i], b[i]);
+        return -1;
+    }
     if(out < fabs(a[i] - b[i]))
       out = fabs(a[i] - b[i]);
   }

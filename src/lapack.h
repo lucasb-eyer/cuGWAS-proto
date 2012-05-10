@@ -3,28 +3,28 @@
 
 /* Cholesky */
 extern void dpotrf_(char *uplo, 
-					int *n, double *A, int *ldA, 
-			 		int *info);
+                    int *n, double *A, int *ldA, 
+                    int *info);
 
 extern void dpotri_(char *uplo, 
-					int *n, double *A, int *ldA, 
-			 		int *info);
+                    int *n, double *A, int *ldA, 
+                    int *info);
 
 /* Triangular inverse */
 extern void dtrtri_(char *uplo, char *diag, 
-					int *n, double *A, int *ldA, 
-					int *info);
+                    int *n, double *A, int *ldA, 
+                    int *info);
 extern void dtrti2_(char *uplo, char *diag, 
-					int *n, double *A, int *ldA, 
-					int *info);
+                    int *n, double *A, int *ldA, 
+                    int *info);
 
 /* 
  * One/Frobenius/Infinity norm or
  * Largest Absolute Value
  */
 extern double dlange_(char *norm, 
-					  int *m, int *n, double *A, int *ldA,
-					  double *work);
+                      int *m, int *n, double *A, int *ldA,
+                      double *work);
 
 /*
  * Eigenvalue decomposition.
@@ -34,52 +34,52 @@ extern double dlange_(char *norm,
  * where symm(A) and SPD(B)
  */
 extern void dsygvd_( int *itype, char *jobz, char *uplo, 
-					 int *n, double *A, int *ldA, double *B, int *ldB,
-			  		 double *W, double *work, int *lwork, double *iwork, int *liwork, 
-			  		 int *info );
+                     int *n, double *A, int *ldA, double *B, int *ldB,
+                     double *W, double *work, int *lwork, double *iwork, int *liwork, 
+                     int *info );
 /*
  * Reduction of a real symmetric-definite generalized eigenproblem
  * to standard form
  */
 extern void dsygst_(int *itype, char *uplo,
-					int *n, double *A, int *ldA, double *B, int *ldB,
-					int *info);
+                    int *n, double *A, int *ldA, double *B, int *ldB,
+                    int *info);
 
 extern void dsygs2_(int *itype, char *uplo,
-					int *n, double *A, int *ldA, double *B, int *ldB,
-					int *info);
+                    int *n, double *A, int *ldA, double *B, int *ldB,
+                    int *info);
 /*
  * Eigendecomposition of a real symmetric matrix
  */
 extern void dsyevd_( char *jobz, char *uplo, 
-					 int *n, double *A, int *lda, 
-					 double *W, double *work, int *lwork, int *iwork, int *liwork, 
-					 int *info );
+                     int *n, double *A, int *lda, 
+                     double *W, double *work, int *lwork, int *iwork, int *liwork, 
+                     int *info );
 /*
  * Eigendecomposition of a real symmetric matrix
  */
 extern void dsyevr_(char *jobz, char *range, char *uplo, 
-			 		int *n, double *A, int *ldA, 
-					double *vl, double *vu, int *il, int *iu,
-					double *abstol, int *m, double *W, double *Z, int *ldZ, int *isuppz, 
-					double *work, int *lwork, int *iwork, int *liwork,
-					int *info);
+                    int *n, double *A, int *ldA, 
+                    double *vl, double *vu, int *il, int *iu,
+                    double *abstol, int *m, double *W, double *Z, int *ldZ, int *isuppz, 
+                    double *work, int *lwork, int *iwork, int *liwork,
+                    int *info);
 /*
  * Solution to a real system of linear equations A * X = B,
  * where symm(A)
  */
 extern void dsysv_(char *uplo, 
-				   int *n, int *nrhs, double *A, int *ldA, int *ipiv, 
-				   double *B, int *ldB, double *work, int *lwork, 
-				   int *info);
+                   int *n, int *nrhs, double *A, int *ldA, int *ipiv, 
+                   double *B, int *ldB, double *work, int *lwork, 
+                   int *info);
 
 /*
  * Solution to a real SPD system of linear equations A * X = B ( SPD(A) )
  */
 extern void dposv_(char *uplo, 
-				   int *n, int *nrhs, double *A, int *ldA,
-				   double *B, int *ldB,
-				   int *info);
+                   int *n, int *nrhs, double *A, int *ldA,
+                   double *B, int *ldB,
+                   int *info);
 
 /*
  * Generalized least squares problem
@@ -104,7 +104,7 @@ extern void dgetrf_( int *m, int *n, double *A, int *lda,
 
 extern void dgetrs_( char *trans, int *n, int *nrhs,
                      double *A, int *lda, int *ipiv,
-					 double *B, int *ldb, int *info );
+                     double *B, int *ldb, int *info );
 
 extern void dlaswp_( int *n, double *A, int *lda,
                      int *k1, int *k2, int *ipiv, int *incx );
@@ -116,9 +116,9 @@ extern void dgeqrf_( int *m, int *n, double *A, int *lda,
 
 extern void dormqr_( char *side, char *trans,
                      int *m, int *n, int *k,
-					 double *A, int *lda,
+                     double *A, int *lda,
                      double *tau, double *C, int *ldc,
-					 double *work, int *lwork, int *info );
-	
+                     double *work, int *lwork, int *info );
+    
 
 #endif // __LAPACK_H
