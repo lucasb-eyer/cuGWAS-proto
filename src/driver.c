@@ -72,6 +72,16 @@ int main( int argc, char *argv[] )
                   cf.XL_path, cf.XR_path, cf.Y_path, 
                   cf.B_path, cf.V_path
           );
+#ifdef FGLS_WITH_GPU
+      else if ( var == 'g' )
+          fgls_chol_gpu( 
+                  cf.n, cf.p, cf.m, cf.t, cf.wXL, cf.wXR,
+                  cf.x_b, cf.y_b, cf.NUM_COMPUTE_THREADS,
+                  cf.Phi_path, cf.h_path, cf.sigma_path, 
+                  cf.XL_path, cf.XR_path, cf.Y_path, 
+                  cf.B_path, cf.V_path
+          );
+#endif
       else
           fgls_chol( 
                   cf.n, cf.p, cf.m, cf.t, cf.wXL, cf.wXR,
