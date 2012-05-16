@@ -18,7 +18,7 @@ void error_msg(char *msg, int abort)
 void * fgls_malloc_impl( const char* file, long line, size_t size )
 {
     void *buf;
-    
+
     if ( (buf = malloc( size )) == NULL ) {
         fprintf(stderr, "Couldn't allocate %ld bytes of memory in %s:%ld\n", size, file, line);
         exit(EXIT_FAILURE);
@@ -35,6 +35,15 @@ int read_clock(struct timeval *t)
 int elapsed_time(struct timeval *start, struct timeval *end)
 {
     return (int)(end->tv_sec - start->tv_sec)*1e6 + (int)(end->tv_usec - start->tv_usec);
+}
+
+void sleep_seconds(double seconds)
+{
+    double real = 0;
+    struct timespec ts;
+    ts.tv_nsec = (long)(modf(seconds, &real) * 1000000.0);
+    ts.tv_sec = (time_t)real;
+    nanosleep(&ts, 0);
 }
 
 void initialize_config(
