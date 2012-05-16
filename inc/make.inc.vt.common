@@ -1,4 +1,4 @@
 CC = vtcc
 
-CFLAGS =  -pthread -fopenmp -DMKL -DVTRACE -vt:mt -vt:inst manual -vt:verbose
+CFLAGS =  -pthread -fopenmp -DMKL -DVTRACE -vt:mt -vt:inst manual -vt:verbose -vt:noopari
 
