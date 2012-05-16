@@ -205,7 +205,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
     void* L_gpu = 0;
     size_t L_gpu_bytes = (size_t)cf.n * cf.n * sizeof(double);
     START_SECTION2("GPU_alloc_L", "Allocating GPU Memory for L: %ld bytes (%g MB)", L_gpu_bytes, L_gpu_bytes/1024.0/1024.0);
-    if((cu_error = cudaHostAlloc(&L_gpu, L_gpu_bytes, 0)) != cudaSuccess) {
+    if((cu_error = cudaMalloc(&L_gpu, L_gpu_bytes)) != cudaSuccess) {
         char err[STR_BUFFER_SIZE];
         snprintf(err, STR_BUFFER_SIZE, "Not enough GPU memory to allocate %ld bytes for L (info: %d)", L_gpu_bytes, cu_error);
         error_msg(err, 1);
@@ -215,7 +215,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
     void* Xr_gpu = 0;
     size_t Xr_gpu_bytes = (size_t)cf.x_b * cf.wXR * cf.n * sizeof(double);
     START_SECTION2("GPU_alloc_Xr", "Allocating GPU Memory for Xr: %ld bytes (%g MB)", Xr_gpu_bytes, Xr_gpu_bytes/1024.0/1024.0);
-    if((cu_error = cudaHostAlloc(&Xr_gpu, Xr_gpu_bytes, 0)) != cudaSuccess) {
+    if((cu_error = cudaMalloc(&Xr_gpu, Xr_gpu_bytes, 0)) != cudaSuccess) {
         char err[STR_BUFFER_SIZE];
         snprintf(err, STR_BUFFER_SIZE, "Not enough GPU memory to allocate %ld bytes for Xr (info: %d)", Xr_gpu_bytes, cu_error);
         error_msg(err, 1);
@@ -504,7 +504,6 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
             }
             END_SECTION("GPU_trsm");
 
-
             START_SECTION("GPU_recv_LXr", "Getting inv(L) * Xr back to the CPU");
             // GPU: Transfer the current inv(L)*Xr block back to the CPU.
             if((cu_status = cublasGetVector(Xr_gpu_bytes/sizeof(double), sizeof(double), Xr_gpu, 1, x_cur, 1)) != CUBLAS_STATUS_SUCCESS) {
@@ -655,8 +654,8 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
     START_SECTION("GPU_cleanup", "Waiting for all GPU stuff to end");
 
     // GPU: clean-up
-    cudaFreeHost(L_gpu);
-    cudaFreeHost(Xr_gpu);
+    cudaFree(L_gpu);
+    cudaFree(Xr_gpu);
     cudaStreamDestroy(cu_stream);
     cublasDestroy(cu_handle);
 
