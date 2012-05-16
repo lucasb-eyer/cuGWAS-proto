@@ -1,0 +1,6 @@
+COMP=COMP_J;COMP_M;COMP_IB;COMP_I;COMP_L;
+READ=READ_X;READ_Y;WAIT_X;WAIT_Y;
+WRITE=WRITE_BV;WAIT_BV;
+GPU_misc=GPU_init;GPU_alloc_L;GPU_alloc_Xr;
+GPU_transfer=GPU_send_L;GPU_send_Xr;GPU_recv_LXr;GPU_cleanup;
+GPU_computation=GPU_trsm;

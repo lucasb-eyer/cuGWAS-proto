@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -11,7 +12,9 @@
 
 #include <aio.h>
 
-#include <cublas_v2.h>
+#ifdef FGLS_WITH_GPU
+    #include <cublas_v2.h>
+#endif
 
 #include "blas.h"
 #include "lapack.h"
@@ -23,6 +26,66 @@
 
 #ifdef VAMPIR
     #include "vt_user.h"
+#endif
+
+void start_section(struct timeval* t_start,
+#ifdef FGLS_WITH_GPU
+                   cudaStream_t* cu_stream,
+#endif
+                   const char* vt_id,
+                   const char* text, ...)
+{
+#if defined(FGLS_WITH_GPU) && defined(FGLS_GPU_SERIAL)
+    if(cu_stream)
+        cudaStreamSynchronize(*cu_stream);
+#endif
+#ifdef TIMING
+    read_clock(t_start);
+#endif
+#if defined(TIMING) || defined(DEBUG)
+    va_list argp;
+    va_start(argp, text);
+    vprintf(text, argp);
+    fflush(stdout);
+#endif
+#ifdef VAMPIR
+    VT_USER_START(vt_id);
+#endif
+}
+
+void end_section(struct timeval* t_start,
+#ifdef FGLS_WITH_GPU
+                 cudaStream_t* cu_stream,
+#endif
+                 const char* vt_id)
+{
+#if defined(FGLS_WITH_GPU) && defined(FGLS_GPU_SERIAL)
+    if(cu_stream)
+        cudaStreamSynchronize(*cu_stream);
+#endif
+#ifdef VAMPIR
+    VT_USER_END(vt_id);
+#endif
+#ifdef TIMING
+    struct timeval t_end;
+    read_clock(&t_end);
+    int dt = elapsed_time(t_start, &t_end);
+    printf("done in %fs (%fms, %dus)\n", dt*0.000001, dt*0.001, dt);
+    fflush(stdout);
+#elif defined (DEBUG)
+    printf("done\n");
+    fflush(stdout);
+#endif
+}
+
+#ifdef FGLS_WITH_GPU
+    #define START_SECTION(VT_ID, MSG) start_section(&t_start, &cu_stream, VT_ID, MSG "... ")
+    #define START_SECTION2(VT_ID, MSG, ...) start_section(&t_start, &cu_stream, VT_ID, MSG "... ", __VA_ARGS__)
+    #define END_SECTION(VT_ID) end_section(&t_start, &cu_stream, VT_ID)
+#else
+    #define START_SECTION(VT_ID, MSG) start_section(&t_start, VT_ID, MSG "... ")
+    #define START_SECTION2(VT_ID, MSG, ...) start_section(&t_start, VT_ID, MSG "... ", __VA_ARGS__)
+    #define END_SECTION(VT_ID) end_section(&t_start, VT_ID)
 #endif
 
 /*
@@ -83,6 +146,11 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
     int nn = n * n; // size_t
     char numths_str[STR_BUFFER_SIZE];
 
+#ifdef TIMING
+    // For measuring times.
+    struct timeval t_start;
+#endif
+
 #ifdef DEBUG
     /* Checking the input arguments */
     printf("n: %d\np: %d\nm: %d\nt: %d\nwXL: %d\nwXR: %d\n", n, p, m, t, wXL, wXR);
@@ -90,6 +158,11 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
     printf("Phi: %s\nh2: %s\ns2: %s\n", Phi_path, h2_path, sigma2_path);
     printf("XL: %s\nXR: %s\nY: %s\n", XL_path, XR_path, Y_path);
     printf("B: %s\nV: %s\n", B_path, V_path);
+#endif
+#ifdef FGLS_WITH_GPU
+    printf("Running the GPU version\n");
+#else
+    printf("Warning: running the GPU version in CPU mode. You most likely didn't compile it with FGLS_WITH_GPU.\n");
 #endif
 
     /* Fill in the config structure */
@@ -104,13 +177,9 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
     if ( y_b != 1 )
         fprintf(stderr, "[Warning] y_b not used (set to 1)\n");
 
-#ifdef VAMPIR
-    VT_USER_START("GPU_init");
-#endif
-#ifdef DEBUG
-    printf("Initializing GPU...");
-    fflush(stdout);
-#endif
+#ifdef FGLS_WITH_GPU
+    start_section(&t_start, 0, "GPU_init", "Initializing the GPU... ");
+
     //GPU: Initializing the GPU
     cublasHandle_t cu_handle;
     cudaError_t cu_error;
@@ -130,56 +199,28 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
 
     // TODO: multiple streams for multiple GPUs!
     cublasSetStream(cu_handle, cu_stream);
-#ifdef DEBUG
-    printf("done\n");
-    fflush(stdout);
-#endif
+    END_SECTION("GPU_init");
 
     // GPU: We can already allocate GPU space for L aswell as for the streamed Xrs here.
     void* L_gpu = 0;
     size_t L_gpu_bytes = (size_t)cf.n * cf.n * sizeof(double);
-#ifdef DEBUG
-    printf("Allocating GPU Memory: %d bytes...", L_gpu_bytes);
-    fflush(stdout);
-#endif
+    START_SECTION2("GPU_alloc_L", "Allocating GPU Memory for L: %ld bytes (%g MB)", L_gpu_bytes, L_gpu_bytes/1024.0/1024.0);
     if((cu_error = cudaHostAlloc(&L_gpu, L_gpu_bytes, 0)) != cudaSuccess) {
         char err[STR_BUFFER_SIZE];
         snprintf(err, STR_BUFFER_SIZE, "Not enough GPU memory to allocate %ld bytes for L (info: %d)", L_gpu_bytes, cu_error);
         error_msg(err, 1);
     }
-#ifdef DEBUG
-    printf("done\n");
-    fflush(stdout);
-#endif
+    END_SECTION("GPU_alloc_L");
 
     void* Xr_gpu = 0;
     size_t Xr_gpu_bytes = (size_t)cf.x_b * cf.wXR * cf.n * sizeof(double);
-#ifdef DEBUG
-    printf("Allocating GPU Memory: %d bytes...", Xr_gpu_bytes);
-    fflush(stdout);
-#endif
+    START_SECTION2("GPU_alloc_Xr", "Allocating GPU Memory for Xr: %ld bytes (%g MB)", Xr_gpu_bytes, Xr_gpu_bytes/1024.0/1024.0);
     if((cu_error = cudaHostAlloc(&Xr_gpu, Xr_gpu_bytes, 0)) != cudaSuccess) {
         char err[STR_BUFFER_SIZE];
         snprintf(err, STR_BUFFER_SIZE, "Not enough GPU memory to allocate %ld bytes for Xr (info: %d)", Xr_gpu_bytes, cu_error);
         error_msg(err, 1);
     }
-#ifdef DEBUG
-    printf("done\n");
-    fflush(stdout);
-#endif
-
-#ifdef FGLS_GPU_SERIAL
-#ifdef VAMPIR
-    VT_USER_START("GPU_init_wait");
-#endif
-    cudaStreamSynchronize(cu_stream);
-#ifdef VAMPIR
-    VT_USER_END("GPU_init_wait");
-#endif
-#endif
-
-#ifdef VAMPIR
-    VT_USER_END("GPU_init");
+    END_SECTION("GPU_alloc_Xr");
 #endif
 
     /* Memory allocation */
@@ -278,26 +319,18 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
     aiocb_v_prev_l[0] = &aiocb_v_prev;
     aiocb_v_cur_l[0]  = &aiocb_v_cur;
 
-#ifdef VAMPIR
-    VT_USER_START("READ_X");
-#endif
+    START_SECTION("READ_X", "Starting reading the first X from disk");
     /* Read first block of XR's */
     fgls_aio_read( &aiocb_x_cur,
                    fileno( XR_fp ), x_cur,
                    (size_t)MIN( x_b, m ) * wXR * n * sizeof(double), 0 );
-#ifdef VAMPIR
-    VT_USER_END("READ_X");
-#endif
-#ifdef VAMPIR
-    VT_USER_START("READ_Y");
-#endif
+    END_SECTION("READ_X");
+    START_SECTION("READ_Y", "Starting reading the first Y from disk");
     /* Read first Y */
     fgls_aio_read( &aiocb_y_cur,
                    fileno( Y_fp ), y_cur,
                    (size_t)n * sizeof(double), 0 );
-#ifdef VAMPIR
-    VT_USER_END("READ_Y");
-#endif
+    END_SECTION("READ_Y");
 
     int iter = 0;
     for ( j = 0; j < t; j++ )
@@ -312,22 +345,19 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
         setenv("OMP_NUM_THREADS", numths_str, 1);
 #endif
 
-#ifdef VAMPIR
-        VT_USER_START("READ_Y");
-#endif
+        START_SECTION2("READ_Y", "Starting read of next (%dth) Y from disk", j+1);
         /* Read next Y */
         struct aiocb *aiocb_y_next_p = (struct aiocb *)aiocb_y_next_l[0];
         fgls_aio_read( aiocb_y_next_p,
                        fileno( Y_fp ), y_next,
                        j + 1 >= t ? 0 : (size_t)n * sizeof(double),
                        j + 1 >= t ? 0 : (off_t)(j+1) * n * sizeof(double) );
-#ifdef VAMPIR
-        VT_USER_END("READ_Y");
-#endif
+        END_SECTION("READ_Y");
 
 #ifdef VAMPIR
         VT_USER_START("COMP_J");
 #endif
+        START_SECTION("COMP_M", "Computing matrix M");
         /* M := sigma * ( h^2 Phi - (1 - h^2) I ) */
         memcpy( M, Phi, (size_t)n * n * sizeof(double) );
         alpha = h[j] * sigma[j];
@@ -335,12 +365,14 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
         dscal_(&nn, &alpha, M, &iONE);
         for ( i = 0; i < n; i++ )
             M[i*n + i] = M[i*n + i] + beta;
-
+        END_SECTION("COMP_M");
 
         /* L * L' = M */
+        START_SECTION("COMP_L", "Factorizing M into L");
         /*struct timeval t0, t1;*/
         /*gettimeofday(&t0, NULL);*/
         dpotrf_(LOWER, &n, M, &n, &info);
+        END_SECTION("COMP_L");
         /*gettimeofday(&t1, NULL);*/
         /*printf("Chol:  %ld msecs\n", get_diff_ms( &t0, &t1 ));*/
         if (info != 0)
@@ -350,44 +382,27 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
             error_msg(err, 1);
         }
 
-#ifdef DEBUG
-        printf("Sending L to the GPU...");
-        fflush(stdout);
-#endif
+#ifdef FGLS_WITH_GPU
+        START_SECTION("GPU_send_L", "Sending L to the GPU");
         // GPU: Transfer L to the GPU(s) already.
         if((cu_status = cublasSetVector(L_gpu_bytes/sizeof(double), sizeof(double), M, 1, L_gpu, 1)) != CUBLAS_STATUS_SUCCESS) {
             char err[STR_BUFFER_SIZE];
             snprintf(err, STR_BUFFER_SIZE, "sending L to the GPU failed (info: %d)", cu_status);
             error_msg(err, 1);
         }
-
-#ifdef FGLS_GPU_SERIAL
-#ifdef VAMPIR
-        VT_USER_START("GPU_L_wait");
-#endif
-        cudaStreamSynchronize(cu_stream);
-#ifdef VAMPIR
-        VT_USER_END("GPU_L_wait");
-#endif
-#endif
-#ifdef DEBUG
-        printf("done\n");
-        fflush(stdout);
+        END_SECTION("GPU_send_L");
 #endif
 
         /* XL := inv(L) XL */
         memcpy( XL, XL_orig, wXL * n * sizeof(double) );
         dtrsm_(LEFT, LOWER, NO_TRANS, NON_UNIT, &n, &wXL, &ONE, M, &n, XL, &n);
 
-#ifdef VAMPIR
-        VT_USER_START("WAIT_Y");
-#endif
+        START_SECTION2("WAIT_Y", "Waiting for current Y (%dth) of %d bytes (%d MB) from disk", j, aiocb_y_cur.aio_nbytes, aiocb_y_cur.aio_nbytes/1024.0/1024.0);
         /* Wait until current Y is available */
         /*printf("Waiting for %lu bytes read (Y)\n", aiocb_y_cur.aio_nbytes);*/
         fgls_aio_suspend( aiocb_y_cur_l, 1, NULL );
-#ifdef VAMPIR
-        VT_USER_END("WAIT_Y");
-#endif
+        END_SECTION("WAIT_Y");
+
         // Copy y for sigma2.score
         for( k = 0; k < n; k++ )
             scoreYmXB[k] = y_cur[k];
@@ -431,52 +446,30 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
 
         for (ib = 0; ib < m; ib += x_b) 
         {
-#ifdef VAMPIR
-            VT_USER_START("READ_X");
-#endif
+            START_SECTION2("READ_X", "Starting the read of the next Xr block (%d)", ib+x_b);
             /* Read next block of XR's */
             struct aiocb *aiocb_x_next_p = (struct aiocb *)aiocb_x_next_l[0];
             fgls_aio_read( aiocb_x_next_p,
                            fileno( XR_fp ), x_next,
                            ((size_t)ib + x_b) >= m ? (size_t)MIN( x_b, m ) * wXR * n * sizeof(double) : MIN((size_t)x_b, m - ((size_t)ib + x_b)) * wXR * n * sizeof(double),
                            ((off_t)ib + x_b) >= m ? 0 : ((off_t)ib + x_b) * wXR * n * sizeof(double) );
-#ifdef VAMPIR
-            VT_USER_END("READ_X");
-#endif
+            END_SECTION("READ_X");
 
-#ifdef VAMPIR
-            VT_USER_START("WAIT_X");
-#endif
+            START_SECTION2("WAIT_X", "Waiting for the previous Xr block (%d) of %d bytes (%g MB)", ib, aiocb_x_cur.aio_nbytes, aiocb_x_cur.aio_nbytes/1024.0/1024.0);
             /* Wait until current block of XR's is available */
             /*printf("Waiting for %lu bytes read (X)\n", aiocb_x_cur.aio_nbytes);*/
             fgls_aio_suspend( aiocb_x_cur_l, 1, NULL );
-#ifdef VAMPIR
-            VT_USER_END("WAIT_X");
-#endif
+            END_SECTION("WAIT_X");
 
-#ifdef DEBUG
-            printf("Sending Xr to the GPU...");
-            fflush(stdout);
-#endif
+#ifdef FGLS_WITH_GPU
+            START_SECTION2("GPU_send_Xr", "Sending the Xr block (%d) to the GPU", ib);
             // GPU: Transfer the current Xr block to the GPU(s).
             if((cu_status = cublasSetVector(Xr_gpu_bytes/sizeof(double), sizeof(double), x_cur, 1, Xr_gpu, 1)) != CUBLAS_STATUS_SUCCESS) {
                 char err[STR_BUFFER_SIZE];
                 snprintf(err, STR_BUFFER_SIZE, "sending Xr to the GPU failed (info: %d)", cu_status);
                 error_msg(err, 1);
             }
-
-#ifdef FGLS_GPU_SERIAL
-#ifdef VAMPIR
-            VT_USER_START("GPU_Xr_wait");
-#endif
-            cudaStreamSynchronize(cu_stream);
-#ifdef VAMPIR
-            VT_USER_END("GPU_Xr_wait");
-#endif
-#endif
-#ifdef DEBUG
-            printf("done\n");
-            fflush(stdout);
+            END_SECTION("GPU_send_Xr");
 #endif
 
             /* Set the number of threads for the multi-threaded BLAS */
@@ -495,56 +488,31 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
             /* XR := inv(L) XR */
             int x_inc = MIN(x_b, m - ib);
             int rhss  = wXR * x_inc;
-//            dtrsm_(LEFT, LOWER, NO_TRANS, NON_UNIT, &n, &rhss, &ONE, M, &n, x_cur, &n);
-
-#ifdef DEBUG
-            printf("Computing the trsm on the GPU...");
-            fflush(stdout);
+#ifndef FGLS_WITH_GPU
+            START_SECTION("CPU_trsm", "Computing the trsm on the CPU");
+            dtrsm_(LEFT, LOWER, NO_TRANS, NON_UNIT, &n, &rhss, &ONE, M, &n, x_cur, &n);
+            END_SECTION("CPU_trsm");
 #endif
+
+#ifdef FGLS_WITH_GPU
+            START_SECTION("GPU_trsm", "Computing the trsm on the GPU");
             // GPU: do the trsm on the gpu.
             if((cu_status = cublasDtrsm(cu_handle, CUBLAS_SIDE_LEFT, CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N, CUBLAS_DIAG_NON_UNIT, n, rhss, &ONE, L_gpu, n, Xr_gpu, n)) != CUBLAS_STATUS_SUCCESS) {
                 char err[STR_BUFFER_SIZE];
                 snprintf(err, STR_BUFFER_SIZE, "computing the trsm on the GPU failed (info: %d)", cu_status);
                 error_msg(err, 1);
             }
+            END_SECTION("GPU_trsm");
 
-#ifdef FGLS_GPU_SERIAL
-#ifdef VAMPIR
-            VT_USER_START("GPU_trsm_wait");
-#endif
-            cudaStreamSynchronize(cu_stream);
-#ifdef VAMPIR
-            VT_USER_END("GPU_trsm_wait");
-#endif
-#endif
-#ifdef DEBUG
-            printf("done\n");
-            fflush(stdout);
-#endif
 
-#ifdef DEBUG
-            printf("Getting inv(L) * Xr back to the CPU...");
-            fflush(stdout);
-#endif
+            START_SECTION("GPU_recv_LXr", "Getting inv(L) * Xr back to the CPU");
             // GPU: Transfer the current inv(L)*Xr block back to the CPU.
             if((cu_status = cublasGetVector(Xr_gpu_bytes/sizeof(double), sizeof(double), Xr_gpu, 1, x_cur, 1)) != CUBLAS_STATUS_SUCCESS) {
                 char err[STR_BUFFER_SIZE];
                 snprintf(err, STR_BUFFER_SIZE, "sending inv(L)*Xr to the CPU failed (info: %d)", cu_status);
                 error_msg(err, 1);
             }
-
-#ifdef FGLS_GPU_SERIAL
-#ifdef VAMPIR
-            VT_USER_START("GPU_LXr_wait");
-#endif
-            cudaStreamSynchronize(cu_stream);
-#ifdef VAMPIR
-            VT_USER_END("GPU_LXr_wait");
-#endif
-#endif
-#ifdef DEBUG
-            printf("done\n");
-            fflush(stdout);
+            END_SECTION("GPU_recv_LXr");
 #endif
 
 #ifdef VAMPIR
@@ -683,19 +651,8 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
     VT_USER_END("WAIT_ALL");
 #endif
 
-#ifdef FGLS_GPU_SERIAL
-#ifdef VAMPIR
-    VT_USER_START("GPU_preclean_wait");
-#endif
-#ifdef DEBUG
-    printf("Cleaning up GPU resources...");
-    fflush(stdout);
-#endif
-    cudaStreamSynchronize(cu_stream);
-#ifdef VAMPIR
-    VT_USER_END("GPU_preclean_wait");
-#endif
-#endif
+#ifdef FGLS_WITH_GPU
+    START_SECTION("GPU_cleanup", "Waiting for all GPU stuff to end");
 
     // GPU: clean-up
     cudaFreeHost(L_gpu);
@@ -703,9 +660,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
     cudaStreamDestroy(cu_stream);
     cublasDestroy(cu_handle);
 
-#ifdef DEBUG
-    printf("done\n");
-    fflush(stdout);
+    end_section(&t_start, 0, "GPU_cleanup");
 #endif
 
     /* Clean-up */
