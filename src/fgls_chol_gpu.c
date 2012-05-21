@@ -29,16 +29,26 @@
     #include "vt_user.h"
 #endif
 
-void start_section(struct timeval* t_start,
+void sync_gpus(int ngpus)
+{
 #ifdef FGLS_WITH_GPU
-                   cudaStream_t* cu_stream,
+    int igpu = 0;
+    for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+        cudaSetDevice(igpu);
+        cudaStreamSynchronize(0);
+    }
+#endif
+}
+
+void start_section(struct timeval* t_start,
+#if defined(FGLS_WITH_GPU)
+                   int ngpus,
 #endif
                    const char* vt_id,
                    const char* text, ...)
 {
 #if defined(FGLS_WITH_GPU) && defined(FGLS_GPU_SERIAL)
-    if(cu_stream)
-        cudaStreamSynchronize(*cu_stream);
+    sync_gpus(ngpus);
 #endif
 #ifdef TIMING
     read_clock(t_start);
@@ -60,13 +70,12 @@ void start_section(struct timeval* t_start,
 
 void end_section(struct timeval* t_start,
 #ifdef FGLS_WITH_GPU
-                 cudaStream_t* cu_stream,
+                 int ngpus,
 #endif
                  const char* vt_id)
 {
 #if defined(FGLS_WITH_GPU) && defined(FGLS_GPU_SERIAL)
-    if(cu_stream)
-        cudaStreamSynchronize(*cu_stream);
+    sync_gpus(ngpus);
 #endif
 #ifdef VAMPIR
     VT_USER_END(vt_id);
@@ -84,9 +93,9 @@ void end_section(struct timeval* t_start,
 }
 
 #ifdef FGLS_WITH_GPU
-    #define START_SECTION(VT_ID, MSG) start_section(&t_start, &cu_stream, VT_ID, MSG "... ")
-    #define START_SECTION2(VT_ID, MSG, ...) start_section(&t_start, &cu_stream, VT_ID, MSG "... ", __VA_ARGS__)
-    #define END_SECTION(VT_ID) end_section(&t_start, &cu_stream, VT_ID)
+    #define START_SECTION(VT_ID, MSG) start_section(&t_start, ngpus, VT_ID, MSG "... ")
+    #define START_SECTION2(VT_ID, MSG, ...) start_section(&t_start, ngpus, VT_ID, MSG "... ", __VA_ARGS__)
+    #define END_SECTION(VT_ID) end_section(&t_start, ngpus, VT_ID)
 #else
     #define START_SECTION(VT_ID, MSG) start_section(&t_start, VT_ID, MSG "... ")
     #define START_SECTION2(VT_ID, MSG, ...) start_section(&t_start, VT_ID, MSG "... ", __VA_ARGS__)
@@ -183,9 +192,10 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
         fprintf(stderr, "[Warning] y_b not used (set to 1)\n");
 
 #ifdef FGLS_WITH_GPU
-    start_section(&t_start, 0, "GPU_init", "Initializing the GPU... ");
+    start_section(&t_start, 0, "GPU_init", "Initializing the GPU(s)... ");
 
     //GPU: Initializing the GPU
+    int ngpus = 0, igpu = 0;
     cublasHandle_t cu_handle;
     cudaError_t cu_error;
     cublasStatus_t cu_status;
@@ -195,35 +205,39 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
         error_msg(err, 1);
     }
 
-    cudaStream_t cu_stream;
-    if((cu_error = cudaStreamCreate(&cu_stream)) != cudaSuccess) {
+    if((cu_error = cudaGetDeviceCount(&ngpus)) != CUBLAS_STATUS_SUCCESS) {
         char err[STR_BUFFER_SIZE];
-        snprintf(err, STR_BUFFER_SIZE, "cudaStreamCreate() failed (info: %d)", cu_error);
+        snprintf(err, STR_BUFFER_SIZE, "Can't get the cuda device count. Are there any? (info: %d)", cu_error);
         error_msg(err, 1);
     }
-
-    // TODO: multiple streams for multiple GPUs!
-    cublasSetStream(cu_handle, cu_stream);
     END_SECTION("GPU_init");
 
+    printf("Using %d GPUs\n", ngpus);
+
     // GPU: We can already allocate GPU space for L aswell as for the streamed Xrs here.
-    void* L_gpu = 0;
+    void** L_gpus = fgls_malloc(ngpus*sizeof(void*));
     size_t L_gpu_bytes = (size_t)cf.n * cf.n * sizeof(double);
-    START_SECTION2("GPU_alloc_L", "Allocating GPU Memory for L: %ld bytes (%g MB)", L_gpu_bytes, L_gpu_bytes/1024.0/1024.0);
-    if((cu_error = cudaMalloc(&L_gpu, L_gpu_bytes)) != cudaSuccess) {
-        char err[STR_BUFFER_SIZE];
-        snprintf(err, STR_BUFFER_SIZE, "Not enough GPU memory to allocate %ld bytes for L (info: %d)", L_gpu_bytes, cu_error);
-        error_msg(err, 1);
+    START_SECTION2("GPU_alloc_L", "Allocating Memory for L on each GPU: %ld bytes (%g MB)", L_gpu_bytes, L_gpu_bytes/1024.0/1024.0);
+    for(igpu = 0 ; igpu < ngpus ; igpu++) {
+        cudaSetDevice(igpu);
+        if((cu_error = cudaMalloc(L_gpus + igpu, L_gpu_bytes)) != cudaSuccess) {
+            char err[STR_BUFFER_SIZE];
+            snprintf(err, STR_BUFFER_SIZE, "Not enough memory to allocate %ld bytes for L on GPU %d (info: %d)", L_gpu_bytes, igpu, cu_error);
+            error_msg(err, 1);
+        }
     }
     END_SECTION("GPU_alloc_L");
 
-    void* Xr_gpu = 0;
+    void** Xr_gpus = fgls_malloc(ngpus*sizeof(void*));
     size_t Xr_gpu_bytes = (size_t)cf.x_b * cf.wXR * cf.n * sizeof(double);
-    START_SECTION2("GPU_alloc_Xr", "Allocating GPU Memory for Xr: %ld bytes (%g MB)", Xr_gpu_bytes, Xr_gpu_bytes/1024.0/1024.0);
-    if((cu_error = cudaMalloc(&Xr_gpu, Xr_gpu_bytes)) != cudaSuccess) {
-        char err[STR_BUFFER_SIZE];
-        snprintf(err, STR_BUFFER_SIZE, "Not enough GPU memory to allocate %ld bytes for Xr (info: %d)", Xr_gpu_bytes, cu_error);
-        error_msg(err, 1);
+    START_SECTION2("GPU_alloc_Xr", "Allocating Memory for Xr on each GPU: %ld bytes (%g MB)", Xr_gpu_bytes, Xr_gpu_bytes/1024.0/1024.0);
+    for(igpu = 0 ; igpu < ngpus ; igpu++) {
+        cudaSetDevice(igpu);
+        if((cu_error = cudaMalloc(Xr_gpus + igpu, Xr_gpu_bytes)) != cudaSuccess) {
+            char err[STR_BUFFER_SIZE];
+            snprintf(err, STR_BUFFER_SIZE, "Not enough memory to allocate %ld bytes for Xr on GPU %d (info: %d)", Xr_gpu_bytes, igpu, cu_error);
+            error_msg(err, 1);
+        }
     }
     END_SECTION("GPU_alloc_Xr");
 #endif
@@ -275,7 +289,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
     XL_fp = fopen( cf.XL_path, "rb" );
     sync_read( XL_orig, XL_fp, cf.wXL * cf.n, 0 );
     fclose( XL_fp );
-    
+
     /* Files and pointers for out-of-core */
     XR_fp = fopen( cf.XR_path, "rb");
     Y_fp = fopen( cf.Y_path, "rb");
@@ -388,12 +402,18 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
         }
 
 #ifdef FGLS_WITH_GPU
-        START_SECTION("GPU_send_L", "Sending L to the GPU");
+        // Wait for the previous gpu action to finish.
+        sync_gpus(ngpus);
+
+        START_SECTION("GPU_send_L", "Sending L to the GPUs");
         // GPU: Transfer L to the GPU(s) already.
-        if((cu_status = cublasSetVector(L_gpu_bytes/sizeof(double), sizeof(double), M, 1, L_gpu, 1)) != CUBLAS_STATUS_SUCCESS) {
-            char err[STR_BUFFER_SIZE];
-            snprintf(err, STR_BUFFER_SIZE, "sending L to the GPU failed (info: %d)", cu_status);
-            error_msg(err, 1);
+        for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+            cudaSetDevice(igpu);
+            if((cu_status = cublasSetVector(L_gpu_bytes/sizeof(double), sizeof(double), M, 1, L_gpus[igpu], 1)) != CUBLAS_STATUS_SUCCESS) {
+                char err[STR_BUFFER_SIZE];
+                snprintf(err, STR_BUFFER_SIZE, "sending L to the GPU %d failed (info: %d)", igpu, cu_status);
+                error_msg(err, 1);
+            }
         }
         END_SECTION("GPU_send_L");
 #endif
@@ -467,12 +487,16 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
             END_SECTION("WAIT_X");
 
 #ifdef FGLS_WITH_GPU
-            START_SECTION2("GPU_send_Xr", "Sending the Xr block (%d) to the GPU", ib);
+            START_SECTION2("GPU_send_Xr", "Distributing the Xr block (%d) equally amongst the %d GPUs", ib, ngpus);
             // GPU: Transfer the current Xr block to the GPU(s).
-            if((cu_status = cublasSetVector(Xr_gpu_bytes/sizeof(double), sizeof(double), x_cur, 1, Xr_gpu, 1)) != CUBLAS_STATUS_SUCCESS) {
-                char err[STR_BUFFER_SIZE];
-                snprintf(err, STR_BUFFER_SIZE, "sending Xr to the GPU failed (info: %d)", cu_status);
-                error_msg(err, 1);
+            size_t Xr_elems_per_device = n*(wXR*x_b)/ngpus;
+            for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+                cudaSetDevice(igpu);
+                if((cu_status = cublasSetVector(Xr_elems_per_device, sizeof(double), x_cur+igpu*Xr_elems_per_device, 1, Xr_gpus[igpu], 1)) != CUBLAS_STATUS_SUCCESS) {
+                    char err[STR_BUFFER_SIZE];
+                    snprintf(err, STR_BUFFER_SIZE, "sending part of Xr to the GPU %d failed (info: %d)", igpu, cu_status);
+                    error_msg(err, 1);
+                }
             }
             END_SECTION("GPU_send_Xr");
 #endif
@@ -500,23 +524,36 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
 #endif
 
 #ifdef FGLS_WITH_GPU
-            START_SECTION("GPU_trsm", "Computing the trsm on the GPU");
+            sync_gpus(ngpus); // Wait for the transfers of Xr to finish.
+
+            START_SECTION("GPU_trsm", "Computing the trsms on the GPUs");
             // GPU: do the trsm on the gpu.
-            if((cu_status = cublasDtrsm(cu_handle, CUBLAS_SIDE_LEFT, CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N, CUBLAS_DIAG_NON_UNIT, n, rhss, &ONE, L_gpu, n, Xr_gpu, n)) != CUBLAS_STATUS_SUCCESS) {
-                char err[STR_BUFFER_SIZE];
-                snprintf(err, STR_BUFFER_SIZE, "computing the trsm on the GPU failed (info: %d)", cu_status);
-                error_msg(err, 1);
+            for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+                cudaSetDevice(igpu);
+                if((cu_status = cublasDtrsm(cu_handle, CUBLAS_SIDE_LEFT, CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N, CUBLAS_DIAG_NON_UNIT, n, rhss/ngpus, &ONE, L_gpus[igpu], n, Xr_gpus[igpu], n)) != CUBLAS_STATUS_SUCCESS) {
+                    char err[STR_BUFFER_SIZE];
+                    snprintf(err, STR_BUFFER_SIZE, "computing the trsm on the GPU %d failed (info: %d)", igpu, cu_status);
+                    error_msg(err, 1);
+                }
             }
             END_SECTION("GPU_trsm");
 
+            sync_gpus(ngpus);
+
             START_SECTION("GPU_recv_LXr", "Getting inv(L) * Xr back to the CPU");
             // GPU: Transfer the current inv(L)*Xr block back to the CPU.
-            if((cu_status = cublasGetVector(Xr_gpu_bytes/sizeof(double), sizeof(double), Xr_gpu, 1, x_cur, 1)) != CUBLAS_STATUS_SUCCESS) {
-                char err[STR_BUFFER_SIZE];
-                snprintf(err, STR_BUFFER_SIZE, "sending inv(L)*Xr to the CPU failed (info: %d)", cu_status);
-                error_msg(err, 1);
+            for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+                cudaSetDevice(igpu);
+                if((cu_status = cublasGetVector(Xr_elems_per_device, sizeof(double), Xr_gpus[igpu], 1, x_cur + igpu*Xr_elems_per_device, 1)) != CUBLAS_STATUS_SUCCESS) {
+                    char err[STR_BUFFER_SIZE];
+                    snprintf(err, STR_BUFFER_SIZE, "sending GPU %d's part of inv(L)*Xr to the CPU failed (info: %d)", igpu, cu_status);
+                    error_msg(err, 1);
+                }
             }
             END_SECTION("GPU_recv_LXr");
+
+            sync_gpus(ngpus); // Wait for the gpu stuff to finish before we can move on computation which depends on x_cur
+            // TODO: overlap GPU-CPU computation.
 #endif
 
 #ifdef VAMPIR
@@ -646,13 +683,20 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
 #endif
 
 #ifdef FGLS_WITH_GPU
+    sync_gpus(ngpus); // Wait for the transfers of Xr to finish.
+
     START_SECTION("GPU_cleanup", "Waiting for all GPU stuff to end");
 
     // GPU: clean-up
-    cudaFree(L_gpu);
-    cudaFree(Xr_gpu);
-    cudaStreamDestroy(cu_stream);
+    for(igpu = 0 ; igpu < ngpus ; ++igpu) {
+        cudaSetDevice(igpu);
+        cudaFree(L_gpus[igpu]);
+        cudaFree(Xr_gpus[igpu]);
+    }
     cublasDestroy(cu_handle);
+
+    free(L_gpus);
+    free(Xr_gpus);
 
     end_section(&t_start, 0, "GPU_cleanup");
 #endif
