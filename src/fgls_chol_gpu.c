@@ -43,10 +43,14 @@ void start_section(struct timeval* t_start,
 #ifdef TIMING
     read_clock(t_start);
 #endif
-#if defined(TIMING) || defined(DEBUG)
-    va_list argp;
-    va_start(argp, text);
-    vprintf(text, argp);
+#ifdef TIMING
+    #ifdef DEBUG
+        va_list argp;
+        va_start(argp, text);
+        vprintf(text, argp);
+    #else
+        printf(vt_id);
+    #endif
     fflush(stdout);
 #endif
 #ifdef VAMPIR
@@ -528,9 +532,8 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
         #else
             setenv("OMP_NUM_THREADS",  "1", 1);
         #endif
-#ifdef VAMPIR
-            VT_USER_START("COMP_I");
-#endif
+
+            START_SECTION("COMP_I", "Computing B and V on the CPU");
             #pragma omp parallel for private(Bij, Vij, i, k, info) schedule(static) num_threads(cf.NUM_COMPUTE_THREADS)
             for (i = 0; i < x_inc; i++)
             {
@@ -585,13 +588,9 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
                 for ( k = 0; k < p; k++ )
                     Vij[k*p+k] = sqrt(Vij[k*p+k]);
             }
-#ifdef VAMPIR
-            VT_USER_END("COMP_I");
-#endif
+            END_SECTION("COMP_I");
 
-#ifdef VAMPIR
-            VT_USER_START("WAIT_BV");
-#endif
+            START_SECTION("WAIT_BV", "Waiting for the write of previous B and V to be done");
             /* Wait until the previous blocks of B's and V's are written */
             if ( iter > 0)
             {
@@ -600,13 +599,10 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
                 /*printf("Waiting for %lu bytes written (v)\n", aiocb_v_prev.aio_nbytes);*/
                 fgls_aio_suspend( aiocb_v_prev_l, 1, NULL );
             }
-#ifdef VAMPIR
-            VT_USER_END("WAIT_BV");
-#endif
+            END_SECTION("WAIT_BV");
+
             /* Write current blocks of B's and V's */
-#ifdef VAMPIR
-            VT_USER_START("WRITE_BV");
-#endif
+            START_SECTION("WRITE_BV", "Starting the writing of B and V");
             struct aiocb *aiocb_b_cur_p;
             aiocb_b_cur_p = (struct aiocb *) aiocb_b_cur_l[0];
             fgls_aio_write( aiocb_b_cur_p,
@@ -620,9 +616,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
                             fileno( V_fp ), v_cur,
                             (size_t)x_inc * p * p * sizeof(double),
                             ((off_t)j * m * p * p + (off_t)ib * p * p) * sizeof(double) );
-#ifdef VAMPIR
-            VT_USER_END("WRITE_BV");
-#endif
+            END_SECTION("WRITE_BV");
 
             /* Swap buffers */
             swap_aiocb( &aiocb_x_cur_l, &aiocb_x_next_l );
