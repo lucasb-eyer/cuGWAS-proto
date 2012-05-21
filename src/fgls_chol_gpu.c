@@ -13,6 +13,7 @@
 #include <aio.h>
 
 #ifdef FGLS_WITH_GPU
+    #include <cuda_runtime_api.h>
     #include <cublas_v2.h>
 #endif
 
@@ -215,7 +216,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
     void* Xr_gpu = 0;
     size_t Xr_gpu_bytes = (size_t)cf.x_b * cf.wXR * cf.n * sizeof(double);
     START_SECTION2("GPU_alloc_Xr", "Allocating GPU Memory for Xr: %ld bytes (%g MB)", Xr_gpu_bytes, Xr_gpu_bytes/1024.0/1024.0);
-    if((cu_error = cudaMalloc(&Xr_gpu, Xr_gpu_bytes, 0)) != cudaSuccess) {
+    if((cu_error = cudaMalloc(&Xr_gpu, Xr_gpu_bytes)) != cudaSuccess) {
         char err[STR_BUFFER_SIZE];
         snprintf(err, STR_BUFFER_SIZE, "Not enough GPU memory to allocate %ld bytes for Xr (info: %d)", Xr_gpu_bytes, cu_error);
         error_msg(err, 1);

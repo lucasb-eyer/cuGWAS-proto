@@ -1,5 +1,5 @@
-#ifndef FGLS_CHOL_H
-#define FGLS_CHOL_H
+#ifndef FGLS_CHOL_GPU_H
+#define FGLS_CHOL_GPU_H
 
 int fgls_chol_gpu(
         int n, int p, int m, int t, int wXL, int wXR,
@@ -9,4 +9,4 @@ int fgls_chol_gpu(
         char *B_path, char *V_path
 );
 
-#endif // FGLS_CHOL_H
+#endif // FGLS_CHOL_GPU_H

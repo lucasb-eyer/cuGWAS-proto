@@ -5,6 +5,9 @@
 #include "io.h"
 #include "timing.h"
 #include "fgls_chol.h"
+#ifdef FGLS_WITH_GPU
+    #include "fgls_chol_gpu.h"
+#endif
 #include "fgls_eigen.h"
 
 double compare(double *a, double *b, int size);
