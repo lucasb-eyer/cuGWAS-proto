@@ -242,6 +242,15 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
     END_SECTION("GPU_alloc_Xr");
 #endif
 
+    START_SECTION2("CPU_alloc", "Allocating a lot (~%g MB) of memory on the CPU", sizeof(double)*
+            (cf.n*cf.n*2
+            +cf.t*2
+            +cf.wXL*cf.n*2
+            +cf.wXL*2
+            +cf.wXL*cf.wXL*2
+            +cf.n
+            +NUM_BUFFERS_PER_THREAD*(cf.x_b*cf.wXR*cf.n + cf.n + cf.x_b*cf.p + cf.x_b*cf.p*cf.p))/1024.0/1024.0);
+
     /* Memory allocation */
     // In-core
     Phi   = ( double * ) fgls_malloc ( (size_t)cf.n * cf.n * sizeof(double) );
@@ -269,7 +278,9 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
         V[i] = ( double * ) fgls_malloc ( (size_t) cf.x_b * cf.p * cf.p * sizeof(double) );
         /*V[i] = ( double * ) calloc ( cf.x_b * cf.p * cf.p, sizeof(double) );*/
     }
+    END_SECTION("CPU_alloc");
 
+    START_SECTION("READ_files", "Reading data for Phi, h, sigma and XL");
     /* Load in-core data */
     // Phi
     Phi_fp = fopen( cf.Phi_path, "rb" );
@@ -289,6 +300,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
     XL_fp = fopen( cf.XL_path, "rb" );
     sync_read( XL_orig, XL_fp, cf.wXL * cf.n, 0 );
     fclose( XL_fp );
+    END_SECTION("READ_files");
 
     /* Files and pointers for out-of-core */
     XR_fp = fopen( cf.XR_path, "rb");
