@@ -1,9 +1,6 @@
 #ifndef FGLS_COMMON_H
 #define FGLS_COMMON_H
 
-#define TIMING 1
-#define DEBUG 1
-
 #define MIN(x,y) ( (x) < (y) ? (x) : (y) )
 #define STR_BUFFER_SIZE 256
 #define NUM_BUFFERS_PER_THREAD 2

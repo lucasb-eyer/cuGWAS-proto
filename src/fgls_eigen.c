@@ -20,7 +20,7 @@
 #include "timing.h"
 #include "fgls_eigen.h"
 
-#ifdef VAMPIR
+#ifdef VTRACE
   #include "vt_user.h"
 #endif
 
@@ -81,7 +81,7 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
     /*printf("B: %s\nV: %s\n", cf.B_path, cf.V_path);*/
 
 
-#if VAMPIR
+#if VTRACE
     VT_USER_START("PRELOOP");
 #endif
     /* Allocate memory for the eigendecomposition */
@@ -116,11 +116,11 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
     /* Clean-up */
     free( Phi );
     free( Z );
-#if VAMPIR
+#if VTRACE
     VT_USER_END("PRELOOP");
 #endif
 
-#if VAMPIR
+#if VTRACE
     VT_USER_START("LOOPS");
 #endif
     loops_t.cf = &cf;
@@ -195,7 +195,7 @@ int fgls_eigen(int n, int p, int m, int t, int wXL, int wXR,
     /* Wait for the spawned threads */
     for (i = 0; i < cf.NUM_COMPUTE_THREADS; i++)
         pthread_join(compute_threads[i], &retval);
-#if VAMPIR
+#if VTRACE
     VT_USER_START("END");
 #endif
 
@@ -389,7 +389,7 @@ void* ooc_loops(void* in)
 
     gettimeofday(&t0, NULL);
     /*y_inc = MIN( y_b, t - jb );*/
-#if VAMPIR
+#if VTRACE
       VT_USER_START("READ_Y");
 #endif
     /* Read next Y */
@@ -399,28 +399,28 @@ void* ooc_loops(void* in)
                    jb + cf->NUM_COMPUTE_THREADS * y_b >= t ? 0 : (size_t)n * MIN(y_b, t - (jb + cf->NUM_COMPUTE_THREADS * y_b)) * sizeof(double),
                    jb + cf->NUM_COMPUTE_THREADS * y_b >= t ? 0 : (off_t)(jb + y_b * cf->NUM_COMPUTE_THREADS) * n * sizeof(double) );
 
-#ifdef VAMPIR
+#ifdef VTRACE
       VT_USER_END("READ_Y");
 #endif
 
-#ifdef VAMPIR
+#ifdef VTRACE
       VT_USER_START("WAIT_X");
 #endif
     /* Copy XL */
     for (ll = 0; ll < y_inc; ll++)
         memcpy( &XL[ll * wXL * n], loops_t->XL[0], wXL * n * sizeof(double) );
-#if VAMPIR
+#if VTRACE
       VT_USER_END("WAIT_X");
 #endif
-#ifdef VAMPIR
+#ifdef VTRACE
     VT_USER_START("WAIT_Y");
 #endif
     /* Wait until the current Y is available */
     fgls_aio_suspend( aiocb_y_cur_l, 1, NULL );
-#if VAMPIR
+#if VTRACE
     VT_USER_END("WAIT_Y");
 #endif
-#ifdef VAMPIR
+#ifdef VTRACE
     VT_USER_START("COMP_LOOP_Y_CODE");
 #endif
     /* Set the scalars alpha and beta to compute: 
@@ -465,7 +465,7 @@ void* ooc_loops(void* in)
                 &ZERO, &V_tl[ll * wXL * wXL], &wXL); // V_TL
     }
 
-#ifdef VAMPIR
+#ifdef VTRACE
     VT_USER_END("COMP_LOOP_Y_CODE");
 #endif
     for (ib = 0; ib < m; ib += x_b) 
@@ -473,7 +473,7 @@ void* ooc_loops(void* in)
         x_inc = MIN(x_b, m - ib);
         /*printf("Thread %d - ib: %d - x_inc: %d\n", id, ib, x_inc);*/
         /*fflush(stdout);*/
-#if VAMPIR
+#if VTRACE
         VT_USER_START("READ_X");
 #endif
         /* Read the next X */
@@ -483,19 +483,19 @@ void* ooc_loops(void* in)
                        (ib + x_b) >= m ? (size_t)MIN( x_b, m ) * wXR * n * sizeof(double) : MIN( (size_t)x_b, (size_t)(m - (ib + x_b))) * wXR * n * sizeof(double),
                        (ib + x_b) >= m ? 0 : (off_t)(ib + x_b) * wXR * n * sizeof(double) );
 
-#if VAMPIR
+#if VTRACE
         VT_USER_END("READ_X");
 #endif
 
-#if VAMPIR
+#if VTRACE
         VT_USER_START("WAIT_X");
 #endif
         /* Wait until the current X is available */
         fgls_aio_suspend( aiocb_x_cur_l, 1, NULL );
-#if VAMPIR
+#if VTRACE
         VT_USER_END("WAIT_X");
 #endif
-#ifdef VAMPIR
+#ifdef VTRACE
       VT_USER_START("COMP_LOOP_X_CODE");
 #endif
       for ( j = 0; j < y_inc; j++ )
@@ -564,11 +564,11 @@ void* ooc_loops(void* in)
                     Vij[k*p+k] = sqrt(Vij[k*p+k]);
           }
       }
-#if VAMPIR
+#if VTRACE
       VT_USER_END("COMP_LOOP_X_CODE");
 #endif
         
-#if VAMPIR
+#if VTRACE
       VT_USER_START("WAIT_B");
 #endif
       /* Wait until previously computed B and V are written */
@@ -582,11 +582,11 @@ void* ooc_loops(void* in)
             fgls_aio_suspend( &aiocb_v_prev_l[k], 1, NULL );
           }
       }
-#if VAMPIR
+#if VTRACE
       VT_USER_END("WAIT_B");
 #endif
 
-#ifdef VAMPIR
+#ifdef VTRACE
       VT_USER_START("WRITE_B");
 #endif
       /* Write current B and V */
@@ -607,7 +607,7 @@ void* ooc_loops(void* in)
                           (size_t)x_inc * p * p * sizeof(double),
                           ((off_t)(jb+k) * m * p * p + ib * p * p) * sizeof(double) );
       }
-#if VAMPIR
+#if VTRACE
       VT_USER_END("WRITE_B");
 #endif
 
@@ -626,21 +626,21 @@ void* ooc_loops(void* in)
     iter++;
   }
     /* Wait for the remaining IO operations issued */
-#if VAMPIR
+#if VTRACE
       VT_USER_START("WAIT_X");
 #endif
   fgls_aio_suspend( aiocb_x_cur_l, 1, NULL );
-#ifdef VAMPIR
+#ifdef VTRACE
       VT_USER_END("WAIT_X");
 #endif
-#ifdef VAMPIR
+#ifdef VTRACE
       VT_USER_START("WAIT_Y");
 #endif
   fgls_aio_suspend( aiocb_y_cur_l, 1, NULL );
-#ifdef VAMPIR
+#ifdef VTRACE
       VT_USER_END("WAIT_Y");
 #endif
-#ifdef VAMPIR
+#ifdef VTRACE
       VT_USER_START("WAIT_B");
 #endif
   for ( i = 0; i < y_inc; i++ )
@@ -648,7 +648,7 @@ void* ooc_loops(void* in)
     fgls_aio_suspend( &aiocb_b_prev_l[i], 1, NULL );
     fgls_aio_suspend( &aiocb_v_prev_l[i], 1, NULL );
   }
-#ifdef VAMPIR
+#ifdef VTRACE
       VT_USER_END("WAIT_B");
 #endif
 

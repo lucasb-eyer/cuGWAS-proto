@@ -19,7 +19,7 @@
 #include "timing.h"
 #include "fgls_chol.h"
 
-#ifdef VAMPIR
+#ifdef VTRACE
     #include "vt_user.h"
 #endif
 
@@ -198,24 +198,24 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
     aiocb_v_prev_l[0] = &aiocb_v_prev;
     aiocb_v_cur_l[0]  = &aiocb_v_cur;
 
-#ifdef VAMPIR
+#ifdef VTRACE
     VT_USER_START("READ_X");
 #endif
     /* Read first block of XR's */
     fgls_aio_read( &aiocb_x_cur,
                    fileno( XR_fp ), x_cur,
                    (size_t)MIN( x_b, m ) * wXR * n * sizeof(double), 0 );
-#ifdef VAMPIR
+#ifdef VTRACE
     VT_USER_END("READ_X");
 #endif
-#ifdef VAMPIR
+#ifdef VTRACE
     VT_USER_START("READ_Y");
 #endif
     /* Read first Y */
     fgls_aio_read( &aiocb_y_cur,
                    fileno( Y_fp ), y_cur,
                    (size_t)n * sizeof(double), 0 );
-#ifdef VAMPIR
+#ifdef VTRACE
     VT_USER_END("READ_Y");
 #endif
 
@@ -232,7 +232,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
         setenv("OMP_NUM_THREADS", numths_str, 1);
 #endif
 
-#ifdef VAMPIR
+#ifdef VTRACE
         VT_USER_START("READ_Y");
 #endif
         /* Read next Y */
@@ -241,11 +241,11 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
                        fileno( Y_fp ), y_next,
                        j + 1 >= t ? 0 : (size_t)n * sizeof(double),
                        j + 1 >= t ? 0 : (off_t)(j+1) * n * sizeof(double) );
-#ifdef VAMPIR
+#ifdef VTRACE
         VT_USER_END("READ_Y");
 #endif
 
-#ifdef VAMPIR
+#ifdef VTRACE
         VT_USER_START("COMP_J");
 #endif
         /* M := sigma * ( h^2 Phi - (1 - h^2) I ) */
@@ -274,13 +274,13 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
         memcpy( XL, XL_orig, wXL * n * sizeof(double) );
         dtrsm_(LEFT, LOWER, NO_TRANS, NON_UNIT, &n, &wXL, &ONE, M, &n, XL, &n);
 
-#ifdef VAMPIR
+#ifdef VTRACE
         VT_USER_START("WAIT_Y");
 #endif
         /* Wait until current Y is available */
         /*printf("Waiting for %lu bytes read (Y)\n", aiocb_y_cur.aio_nbytes);*/
         fgls_aio_suspend( aiocb_y_cur_l, 1, NULL );
-#ifdef VAMPIR
+#ifdef VTRACE
         VT_USER_END("WAIT_Y");
 #endif
         // Copy y for sigma2.score
@@ -295,7 +295,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 
         /* V_tl := XL' * XL */
         dsyrk_(LOWER, TRANS, &wXL, &n, &ONE, XL, &n, &ZERO, V_tl, &wXL);
-#ifdef VAMPIR
+#ifdef VTRACE
         VT_USER_END("COMP_J");
 #endif
         /* Compute sigma2.score */
@@ -326,7 +326,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
 
         for (ib = 0; ib < m; ib += x_b) 
         {
-#ifdef VAMPIR
+#ifdef VTRACE
             VT_USER_START("READ_X");
 #endif
             /* Read next block of XR's */
@@ -335,17 +335,17 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
                            fileno( XR_fp ), x_next,
                            ((size_t)ib + x_b) >= m ? (size_t)MIN( x_b, m ) * wXR * n * sizeof(double) : MIN((size_t)x_b, m - ((size_t)ib + x_b)) * wXR * n * sizeof(double),
                            ((off_t)ib + x_b) >= m ? 0 : ((off_t)ib + x_b) * wXR * n * sizeof(double) );
-#ifdef VAMPIR
+#ifdef VTRACE
             VT_USER_END("READ_X");
 #endif
 
-#ifdef VAMPIR
+#ifdef VTRACE
             VT_USER_START("WAIT_X");
 #endif
             /* Wait until current block of XR's is available */
             /*printf("Waiting for %lu bytes read (X)\n", aiocb_x_cur.aio_nbytes);*/
             fgls_aio_suspend( aiocb_x_cur_l, 1, NULL );
-#ifdef VAMPIR
+#ifdef VTRACE
             VT_USER_END("WAIT_X");
 #endif
 
@@ -359,7 +359,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
             setenv("OMP_NUM_THREADS", numths_str, 1);
 #endif
 
-#ifdef VAMPIR
+#ifdef VTRACE
             VT_USER_START("COMP_IB");
 #endif
             /* XR := inv(L) XR */
@@ -367,7 +367,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
             int rhss  = wXR * x_inc;
             dtrsm_(LEFT, LOWER, NO_TRANS, NON_UNIT, &n, &rhss, &ONE, M, &n, x_cur, &n);
 
-#ifdef VAMPIR
+#ifdef VTRACE
             VT_USER_END("COMP_IB");
 #endif
 
@@ -380,7 +380,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
         #else
             setenv("OMP_NUM_THREADS",  "1", 1);
         #endif
-#ifdef VAMPIR
+#ifdef VTRACE
             VT_USER_START("COMP_I");
 #endif
             #pragma omp parallel for private(Bij, Vij, i, k, info) schedule(static) num_threads(cf.NUM_COMPUTE_THREADS)
@@ -437,11 +437,11 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
                 for ( k = 0; k < p; k++ )
                     Vij[k*p+k] = sqrt(Vij[k*p+k]);
             }
-#ifdef VAMPIR
+#ifdef VTRACE
             VT_USER_END("COMP_I");
 #endif
 
-#ifdef VAMPIR
+#ifdef VTRACE
             VT_USER_START("WAIT_BV");
 #endif
             /* Wait until the previous blocks of B's and V's are written */
@@ -452,11 +452,11 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
                 /*printf("Waiting for %lu bytes written (v)\n", aiocb_v_prev.aio_nbytes);*/
                 fgls_aio_suspend( aiocb_v_prev_l, 1, NULL );
             }
-#ifdef VAMPIR
+#ifdef VTRACE
             VT_USER_END("WAIT_BV");
 #endif
             /* Write current blocks of B's and V's */
-#ifdef VAMPIR
+#ifdef VTRACE
             VT_USER_START("WRITE_BV");
 #endif
             struct aiocb *aiocb_b_cur_p;
@@ -472,7 +472,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
                             fileno( V_fp ), v_cur,
                             (size_t)x_inc * p * p * sizeof(double),
                             ((off_t)j * m * p * p + (off_t)ib * p * p) * sizeof(double) );
-#ifdef VAMPIR
+#ifdef VTRACE
             VT_USER_END("WRITE_BV");
 #endif
 
@@ -490,7 +490,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
         swap_buffers( &y_cur, &y_next);
     }
 
-#ifdef VAMPIR
+#ifdef VTRACE
     VT_USER_START("WAIT_ALL");
 #endif
     /* Wait for the remaining IO operations issued */
@@ -499,7 +499,7 @@ int fgls_chol(int n, int p, int m, int t, int wXL, int wXR,
     fgls_aio_suspend( aiocb_y_cur_l, 1, NULL );
     fgls_aio_suspend( aiocb_b_prev_l, 1, NULL );
     fgls_aio_suspend( aiocb_v_prev_l, 1, NULL );
-#ifdef VAMPIR
+#ifdef VTRACE
     VT_USER_END("WAIT_ALL");
 #endif
 

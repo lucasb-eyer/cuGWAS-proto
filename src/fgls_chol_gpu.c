@@ -25,7 +25,7 @@
 #include "timing.h"
 #include "fgls_chol.h"
 
-#ifdef VAMPIR
+#ifdef VTRACE
     #include "vt_user.h"
 #endif
 
@@ -53,17 +53,14 @@ void start_section(struct timeval* t_start,
 #ifdef TIMING
     read_clock(t_start);
 #endif
-#ifdef TIMING
-    #ifdef DEBUG
-        va_list argp;
-        va_start(argp, text);
-        vprintf(text, argp);
-    #else
-        printf(vt_id);
-    #endif
+#if defined(DEBUG) || defined(TIMING)
+    va_list argp;
+    va_start(argp, text);
+    vprintf(text, argp);
     fflush(stdout);
 #endif
-#ifdef VAMPIR
+
+#ifdef VTRACE
     VT_USER_START(vt_id);
 #endif
 }
@@ -77,7 +74,7 @@ void end_section(struct timeval* t_start,
 #if defined(FGLS_WITH_GPU) && defined(FGLS_GPU_SERIAL)
     sync_gpus(ngpus);
 #endif
-#ifdef VAMPIR
+#ifdef VTRACE
     VT_USER_END(vt_id);
 #endif
 #ifdef TIMING
@@ -160,10 +157,8 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
     int nn = n * n; // size_t
     char numths_str[STR_BUFFER_SIZE];
 
-#ifdef TIMING
     // For measuring times.
     struct timeval t_start;
-#endif
 
 #ifdef DEBUG
     /* Checking the input arguments */
@@ -385,7 +380,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
                        j + 1 >= t ? 0 : (off_t)(j+1) * n * sizeof(double) );
         END_SECTION("READ_Y");
 
-#ifdef VAMPIR
+#ifdef VTRACE
         VT_USER_START("COMP_J");
 #endif
         START_SECTION("COMP_M", "Computing matrix M");
@@ -452,7 +447,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
 
         /* V_tl := XL' * XL */
         dsyrk_(LOWER, TRANS, &wXL, &n, &ONE, XL, &n, &ZERO, V_tl, &wXL);
-#ifdef VAMPIR
+#ifdef VTRACE
         VT_USER_END("COMP_J");
 #endif
         /* Compute sigma2.score */
@@ -523,7 +518,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
             setenv("OMP_NUM_THREADS", numths_str, 1);
 #endif
 
-#ifdef VAMPIR
+#ifdef VTRACE
             VT_USER_START("COMP_IB");
 #endif
             /* XR := inv(L) XR */
@@ -568,7 +563,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
             // TODO: overlap GPU-CPU computation.
 #endif
 
-#ifdef VAMPIR
+#ifdef VTRACE
             VT_USER_END("COMP_IB");
 #endif
 
@@ -681,7 +676,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
         swap_buffers( &y_cur, &y_next);
     }
 
-#ifdef VAMPIR
+#ifdef VTRACE
     VT_USER_START("WAIT_ALL");
 #endif
     /* Wait for the remaining IO operations issued */
@@ -690,7 +685,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
     fgls_aio_suspend( aiocb_y_cur_l, 1, NULL );
     fgls_aio_suspend( aiocb_b_prev_l, 1, NULL );
     fgls_aio_suspend( aiocb_v_prev_l, 1, NULL );
-#ifdef VAMPIR
+#ifdef VTRACE
     VT_USER_END("WAIT_ALL");
 #endif
 
