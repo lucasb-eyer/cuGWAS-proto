@@ -25,6 +25,8 @@ void * fgls_malloc_impl( const char* file, long line, size_t size )
         exit(EXIT_FAILURE);
     }
 
+    memset(buf, 0, size);
+
     return buf;
 }
 
