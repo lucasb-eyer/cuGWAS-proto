@@ -27,7 +27,6 @@ set(SRC
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_definitions(-DDEBUG)
-    add_definitions(-DFGLS_GPU_SERIAL)
 endif()
 
 if(CMAKE_C_COMPILER MATCHES ".*vtcc")
