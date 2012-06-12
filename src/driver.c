@@ -103,60 +103,52 @@ int main( int argc, char *argv[] )
   printf("Checking B\n");
   /*sleep(3);*/
 
-  char str_buf[STR_BUFFER_SIZE];
-  double *b_mine, *b_exp;
-  FILE *b_mine_f, *b_exp_f;
+  char str_buf1[STR_BUFFER_SIZE];
+  char str_buf2[STR_BUFFER_SIZE];
+  double *mine, *expected;
+  FILE *mine_f, *expected_f;
   double max;
 
-  b_mine = (double*) malloc (cf.m * cf.t * cf.p * sizeof(double));
-  b_exp  = (double*) malloc (cf.m * cf.t * cf.p * sizeof(double));
+  sprintf(str_buf1, "%s/B.out", dir);
+  sprintf(str_buf2, "%s/B_exp.out", dir);
+  mine_f = fopen(str_buf1, "rb");
+  expected_f = fopen(str_buf2, "rb");
+  if(mine_f && expected_f) {
+    mine = (double*) malloc (cf.m * cf.t * cf.p * sizeof(double));
+    expected  = (double*) malloc (cf.m * cf.t * cf.p * sizeof(double));
 
-  sprintf(str_buf, "%s/B.out", dir);
-  b_mine_f = fopen(str_buf, "rb");
-  if(!b_mine_f) {
-    printf("ERROR opening %s\n", str_buf);
-    return -1;
+    sync_read(mine, mine_f, cf.p * cf.m * cf.t, 0);
+    sync_read(expected, expected_f,  cf.p * cf.m * cf.t, 0);
+    max = compare(mine, expected, cf.m*cf.p*cf.t);
+    printf("Max elemental diff: %.16e\n", max);
+
+    free( mine );
+    free( expected );
+  } else {
+    printf("ERROR opening %s and/or %s\n", str_buf1, str_buf2);
   }
-
-  sprintf(str_buf, "%s/B_exp.out", dir);
-  b_exp_f = fopen(str_buf, "rb");
-  if(!b_exp_f) {
-    printf("ERROR opening %s\n", str_buf);
-    return -1;
-  }
-
-  sync_read(b_mine, b_mine_f, cf.p * cf.m * cf.t, 0);
-  sync_read(b_exp,  b_exp_f,  cf.p * cf.m * cf.t, 0);
-  max = compare(b_mine, b_exp, cf.m*cf.p*cf.t);
-  printf("Max elemental diff: %.16e\n", max);
-
-  free( b_mine );
-  free( b_exp  );
 
   printf("Checking V\n");
-  b_mine = (double *) malloc (cf.m * cf.t * cf.p * cf.p * sizeof(double));
-  b_exp  = (double *) malloc (cf.m * cf.t * cf.p * cf.p * sizeof(double));
+  sprintf(str_buf1, "%s/V.out", dir);
+  sprintf(str_buf2, "%s/V_exp.out", dir);
+  mine_f = fopen(str_buf2, "rb");
+  expected_f = fopen(str_buf1, "rb");
 
-  sprintf(str_buf, "%s/V.out", dir);
-  b_mine_f = fopen(str_buf, "rb");
-  if(!b_mine_f) {
-    printf("ERROR opening %s\n", str_buf);
+  if(mine_f && expected_f) {
+    mine = (double *) malloc (cf.m * cf.t * cf.p * cf.p * sizeof(double));
+    expected = (double *) malloc (cf.m * cf.t * cf.p * cf.p * sizeof(double));
+
+    sync_read(mine, mine_f, cf.p * cf.p * cf.m * cf.t, 0);
+    sync_read(expected,  expected_f,  cf.p * cf.p * cf.m * cf.t, 0);
+    max = compare(mine, expected, cf.m * cf.p * cf.p * cf.t);
+    printf("Max elemental diff: %.16e\n", max);
+
+    free( mine );
+    free( expected );
+  } else {
+    printf("ERROR opening %s and/or %s\n", str_buf1, str_buf2);
     return -1;
   }
-
-  sprintf(str_buf, "%s/V_exp.out", dir);
-  b_exp_f = fopen(str_buf, "rb");
-  if(!b_exp_f) {
-    printf("ERROR opening %s\n", str_buf);
-    return -1;
-  }
-  sync_read(b_mine, b_mine_f, cf.p * cf.p * cf.m * cf.t, 0);
-  sync_read(b_exp,  b_exp_f,  cf.p * cf.p * cf.m * cf.t, 0);
-  max = compare(b_mine, b_exp, cf.m * cf.p * cf.p * cf.t);
-  printf("Max elemental diff: %.16e\n", max);
-
-  free( b_mine );
-  free( b_exp  );
 
   printf("Done checking\n");
 #endif // DEBUG
@@ -166,18 +158,21 @@ int main( int argc, char *argv[] )
 
 double compare(double* a, double* b, int size) {
   double maxerr = 0.0, relerr = 0.0;
-  int i;
+  int i, maxerr_i;
   for (i = 0; i < size; i++) {
-    /*if((i % 1000) == 0 && fabs(a[i] - b[i]) > 1e-13)*/
     relerr = fabs((a[i]-b[i])/b[i]);
-    if(relerr > 1e-15)
+/*    if(relerr > 1e-15)
     {
         printf("Difference at %d: %e [(%f - %f)/%f]\n", i, relerr, a[i], b[i], b[i]);
         return -1;
-    }
-    if(relerr > maxerr)
+    }*/
+    if(relerr > maxerr) {
       maxerr = relerr;
+      maxerr_i = i;
+    }
   }
+  if(maxerr > 1e-15)
+    printf("max elemental relative error of %g at %d. Maximum absolute error there: %g (%.15e-%.15e)\n", maxerr, maxerr_i, a[maxerr_i]-b[maxerr_i], a[maxerr_i], b[maxerr_i]);
   return maxerr;
 }
 
