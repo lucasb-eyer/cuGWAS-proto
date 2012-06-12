@@ -85,10 +85,14 @@ void fgls_aio_suspend(const struct aiocb * const cblist[],
         exit( EXIT_FAILURE );
     }
 
-    /*printf("Suspend: %zu bytes expected\n", cblist[0]->aio_nbytes);*/
-    if ( aio_return( (struct aiocb *)cblist[0] ) != cblist[0]->aio_nbytes )
-    {
-        perror("aio_suspend error - data not read completely");
-        exit( EXIT_FAILURE );
+    int i = 0;
+    for(i = 0 ; i < n ; ++i) {
+        //printf("Suspend: %zu bytes expected\n", cblist[i]->aio_nbytes);
+        size_t gotten = aio_return( (struct aiocb *)cblist[i] );
+        //printf("Suspend: %zu bytes received\n", gotten);
+        if(gotten != cblist[i]->aio_nbytes) {
+            perror("aio_suspend error - data not read completely");
+            exit( EXIT_FAILURE );
+        }
     }
 }
