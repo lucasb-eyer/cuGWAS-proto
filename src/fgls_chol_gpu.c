@@ -81,9 +81,15 @@ void end_section(struct timeval* t_start,
 #endif
 }
 
+#if 1
 #define START_SECTION(VT_ID, MSG) start_section(&t_start, ngpus, VT_ID, MSG "... ")
 #define START_SECTION2(VT_ID, MSG, ...) start_section(&t_start, ngpus, VT_ID, MSG "... ", __VA_ARGS__)
 #define END_SECTION(VT_ID) end_section(&t_start, ngpus, VT_ID)
+#else
+#define START_SECTION(VT_ID, MSG) (void*)0
+#define START_SECTION2(VT_ID, MSG, ...) (void*)0
+#define END_SECTION(VT_ID) (void*)0
+#endif
 
 /*
  * Cholesky-based solution of the Feasible Generalized Least-Squares problem
@@ -199,6 +205,8 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
     }
     END_SECTION("GPU_init");
 
+    // This way you can force the use of a certain # of GPUs.
+    //ngpus = 1;
     printf("Using %d GPUs\n", ngpus);
 
     // Create two streams for each GPU: one computation stream and one data transfer stream, so those two can work in parallel.
@@ -236,6 +244,10 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
     double** Xr_alpha_gpus = fgls_malloc(ngpus*sizeof(double*));
     double** Xr_beta_gpus = fgls_malloc(ngpus*sizeof(double*));
     size_t Xr_gpu_bytes = (size_t)cf.x_b * cf.wXR * cf.n * sizeof(double);
+
+    printf("Need %g+%gx2 = %g MB on each GPU\n", L_gpu_bytes/1024.0/1024.0, Xr_gpu_bytes/1024.0/1024.0, (L_gpu_bytes+Xr_gpu_bytes*2)/1024.0/1024.0);
+    fflush(stdout);
+
     START_SECTION2("GPU_alloc_Xr", "Allocating Memory for Xr on each GPU: %ldx3 bytes (%gx3 MB)", Xr_gpu_bytes, Xr_gpu_bytes/1024.0/1024.0);
     for(igpu = 0 ; igpu < ngpus ; igpu++) {
         cudaSetDevice(igpu);
@@ -391,9 +403,6 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
                        j + 1 >= t ? 0 : (off_t)(j+1) * n * sizeof(double) );
         END_SECTION("READ_Y");
 
-#ifdef VTRACE
-        VT_USER_START("COMP_J");
-#endif
         START_SECTION("COMP_M", "Computing matrix M");
         /* M := sigma * ( h^2 Phi - (1 - h^2) I ) */
         memcpy( M, Phi, (size_t)n * n * sizeof(double) );
@@ -457,9 +466,6 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
 
         /* V_tl := XL' * XL */
         dsyrk_(LOWER, TRANS, &wXL, &n, &ONE, XL, &n, &ZERO, V_tl, &wXL);
-#ifdef VTRACE
-        VT_USER_END("COMP_J");
-#endif
         /* Compute sigma2.score */
         // copy B_t and V_tl
         for( k = 0; k < wXL; k++ )
@@ -500,12 +506,12 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
             // Read the next-but-one block of XR.
             // The last two iterations don't need to prefetch disk data anymore.
             if(iblock < nblocks) {
-//                START_SECTION2("READ_X", "Starting the read of the Xr block (%d)", iblock);
+                START_SECTION2("READ_X", "Starting the read of the Xr block (%d)", iblock);
                 fgls_aio_read( &aiocb_x,
                                fileno( XR_fp ), X[hdd_cpu_buff],
                                MIN((size_t)x_b, m - ((size_t)x_b*iblock)) * wXR * n * sizeof(double),
                                ((off_t)x_b*iblock) * wXR * n * sizeof(double) );
-//                END_SECTION("READ_X");
+                END_SECTION("READ_X");
             }
 
             // complete alpha
@@ -533,7 +539,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
 
                 // compute beta
                 // ...starting the next computation aswell as...
-//                START_SECTION2("GPU_trsm", "Starting the trsms (%d) on the GPUs", iblock-1);
+                START_SECTION2("GPU_trsm", "Starting the trsms (%d) on the GPUs", iblock-1);
                 /* XR := inv(L) XR */
                 int curr_Xr_block_length = MIN(x_b, m - (iblock-1)*x_b);
                 int rhss  = wXR * curr_Xr_block_length;
@@ -547,7 +553,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
                         error_msg(err, 1);
                     }
                 }
-//                END_SECTION("GPU_trsm");
+                END_SECTION("GPU_trsm");
             }
 
             size_t prev_Xr_block_length = MIN((size_t)x_b, m - ((size_t)x_b*(iblock-2)));
@@ -556,7 +562,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
             // ...the reception of the results of the previous computation.
             // (The first computation starts at i==1 thus the first result is available at i==2)
             if(iblock >= 2) {
-//                START_SECTION2("GPU_recv_LXr", "Getting inv(L) * Xr (%d) back to the CPU", iblock-2);
+                START_SECTION2("GPU_recv_LXr", "Getting inv(L) * Xr (%d) back to the CPU", iblock-2);
                 size_t prev_Xr_elems_per_device = prev_Xr_block_length*wXR*n/ngpus;
                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
                     cudaSetDevice(igpu);
@@ -566,7 +572,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
                         error_msg(err, 1);
                     }
                 }
-//                END_SECTION("GPU_recv_LXr");
+                END_SECTION("GPU_recv_LXr");
             }
 
             // wait c
@@ -594,7 +600,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
             // send c -> alpha
             // ...so that now we can fill that GPU buffer with the next Xr block to compute
             if(iblock < nblocks) {
-//                START_SECTION2("GPU_send_Xr", "Distributing the Xr block (%d) equally amongst the %d GPUs", iblock, ngpus);
+                START_SECTION2("GPU_send_Xr", "Distributing the Xr block (%d) equally amongst the %d GPUs", iblock, ngpus);
                 size_t Xr_elems_per_device = n*(wXR*x_b)/ngpus;
                 for(igpu = 0 ; igpu < ngpus ; ++igpu) {
                     cudaSetDevice(igpu);
@@ -605,7 +611,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
                         error_msg(err, 1);
                     }
                 }
-//                END_SECTION("GPU_send_Xr");
+                END_SECTION("GPU_send_Xr");
             }
 
             // CPU a -> a_hat
@@ -692,7 +698,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
                 }
 
                 /* Write current blocks of B's and V's */
-//                START_SECTION2("WRITE_BV", "Starting the writing of B and V (%d)", iblock-2);
+                START_SECTION2("WRITE_BV", "Starting the writing of B and V (%d)", iblock-2);
                 fgls_aio_write((struct aiocb*)aiocb_b_cur_l[0],
                                 fileno( B_fp ), b_cur,
                                 (size_t)x_inc * p * sizeof(double),
@@ -704,7 +710,7 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
                                 fileno( V_fp ), v_cur,
                                 (size_t)x_inc * p * p * sizeof(double),
                                 ((off_t)j * m * p * p + (off_t)x_b*(iblock-2) * p * p) * sizeof(double) );
-//                END_SECTION("WRITE_BV");
+                END_SECTION("WRITE_BV");
                 swap_aiocb( &aiocb_b_cur_l, &aiocb_b_prev_l );
                 swap_buffers( &b_cur, &b_prev);
                 swap_aiocb( &aiocb_v_cur_l, &aiocb_v_prev_l );
@@ -723,17 +729,11 @@ int fgls_chol_gpu(int n, int p, int m, int t, int wXL, int wXR,
         swap_buffers( &y_cur, &y_next);
     }
 
-#ifdef VTRACE
-    VT_USER_START("WAIT_ALL");
-#endif
     /* Wait for the remaining IO operations issued */
       /*printf("Last Waiting");*/
     fgls_aio_suspend( aiocb_y_cur_l, 1, NULL );
     fgls_aio_suspend( aiocb_b_prev_l, 1, NULL );
     fgls_aio_suspend( aiocb_v_prev_l, 1, NULL );
-#ifdef VTRACE
-    VT_USER_END("WAIT_ALL");
-#endif
 
     sync_gpus(ngpus); // Wait for the transfers of Xr to finish.
 
